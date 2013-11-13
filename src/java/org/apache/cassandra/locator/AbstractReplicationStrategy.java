@@ -38,6 +38,7 @@ import org.apache.cassandra.service.AbstractWriteResponseHandler;
 import org.apache.cassandra.service.DatacenterSyncWriteResponseHandler;
 import org.apache.cassandra.service.DatacenterWriteResponseHandler;
 import org.apache.cassandra.service.WriteResponseHandler;
+import org.apache.cassandra.utils.CachedValue;
 import org.apache.cassandra.utils.FBUtilities;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
@@ -70,6 +71,13 @@ public abstract class AbstractReplicationStrategy
     }
 
     private final Map<Token, ArrayList<InetAddress>> cachedEndpoints = new NonBlockingHashMap<Token, ArrayList<InetAddress>>();
+    private final CachedValue<TokenMetadata> cachedOnlyTokenMap = new CachedValue<TokenMetadata>()
+    {
+        public TokenMetadata load()
+        {
+            return tokenMetadata.cloneOnlyTokenMap();
+        }
+    };
 
     public ArrayList<InetAddress> getCachedEndpoints(Token t)
     {
@@ -85,6 +93,7 @@ public abstract class AbstractReplicationStrategy
     {
         logger.debug("clearing cached endpoints");
         cachedEndpoints.clear();
+        cachedOnlyTokenMap.invalidate();
     }
 
     /**
@@ -101,7 +110,7 @@ public abstract class AbstractReplicationStrategy
         ArrayList<InetAddress> endpoints = getCachedEndpoints(keyToken);
         if (endpoints == null)
         {
-            TokenMetadata tokenMetadataClone = tokenMetadata.cloneOnlyTokenMap();
+            TokenMetadata tokenMetadataClone = cachedOnlyTokenMap.get();
             keyToken = TokenMetadata.firstToken(tokenMetadataClone.sortedTokens(), searchToken);
             endpoints = new ArrayList<InetAddress>(calculateNaturalEndpoints(searchToken, tokenMetadataClone));
             cacheEndpoint(keyToken, endpoints);
