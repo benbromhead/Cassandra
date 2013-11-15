@@ -64,13 +64,13 @@ public abstract class AbstractReplicationStrategy
         assert tokenMetadata != null;
         this.tokenMetadata = tokenMetadata;
         this.snitch = snitch;
-        this.tokenMetadata.register(this);
         this.configOptions = configOptions == null ? Collections.<String, String>emptyMap() : configOptions;
         this.tableName = tableName;
         // lazy-initialize table itself since we don't create them until after the replication strategies
     }
 
     private final Map<Token, ArrayList<InetAddress>> cachedEndpoints = new NonBlockingHashMap<Token, ArrayList<InetAddress>>();
+    private volatile long cachedEndpointVersion = 0;
     private final CachedValue<TokenMetadata> cachedOnlyTokenMap = new CachedValue<TokenMetadata>()
     {
         public TokenMetadata load()
@@ -81,19 +81,22 @@ public abstract class AbstractReplicationStrategy
 
     public ArrayList<InetAddress> getCachedEndpoints(Token t)
     {
+        long lastEndpointVersion = tokenMetadata.getEndpointVersion();
+
+        if (lastEndpointVersion > cachedEndpointVersion)
+        {
+            logger.debug("clearing cached endpoints");
+            cachedEndpoints.clear();
+            cachedOnlyTokenMap.invalidate();
+            cachedEndpointVersion = lastEndpointVersion;
+        }
+
         return cachedEndpoints.get(t);
     }
 
     public void cacheEndpoint(Token t, ArrayList<InetAddress> addr)
     {
         cachedEndpoints.put(t, addr);
-    }
-
-    public void clearEndpointCache()
-    {
-        logger.debug("clearing cached endpoints");
-        cachedEndpoints.clear();
-        cachedOnlyTokenMap.invalidate();
     }
 
     /**
@@ -211,11 +214,6 @@ public abstract class AbstractReplicationStrategy
         TokenMetadata temp = metadata.cloneOnlyTokenMap();
         temp.updateNormalTokens(pendingTokens, pendingAddress);
         return getAddressRanges(temp).get(pendingAddress);
-    }
-
-    public void invalidateCachedTokenEndpointValues()
-    {
-        clearEndpointCache();
     }
 
     public abstract void validateOptions() throws ConfigurationException;
