@@ -447,8 +447,9 @@ public class StorageProxy implements StorageProxyMBean
 
         if (candidates.size() > 2)
         {
-            IEndpointSnitch snitch = DatabaseDescriptor.getEndpointSnitch();
-            snitch.sortByProximity(FBUtilities.getBroadcastAddress(), candidates);
+            //IEndpointSnitch snitch = DatabaseDescriptor.getEndpointSnitch();
+            //snitch.sortByProximity(FBUtilities.getBroadcastAddress(), candidates);
+            Collections.shuffle(candidates);
             candidates = candidates.subList(0, 2);
         }
 
@@ -875,7 +876,7 @@ public class StorageProxy implements StorageProxyMBean
 
                 ReadRepairDecision rrDecision = cfm.newReadRepairDecision();
                 endpoints = consistency_level.filterForQuery(table, endpoints, rrDecision);
-                
+
                 if (rrDecision != ReadRepairDecision.NONE) {
                     ReadRepairMetrics.attempted.mark();
                 }
@@ -961,9 +962,9 @@ public class StorageProxy implements StorageProxyMBean
                 catch (DigestMismatchException ex)
                 {
                     Tracing.trace("Digest mismatch: {}", ex.toString());
-                    
+
                     ReadRepairMetrics.repairedBlocking.mark();
-                    
+
                     // Do a full data read to resolve the correct response (and repair node that need be)
                     RowDataResolver resolver = new RowDataResolver(command.table, command.key, command.filter());
                     ReadCallback<ReadResponse, Row> repairHandler = handler.withNewResolver(resolver);
@@ -1551,7 +1552,7 @@ public class StorageProxy implements StorageProxyMBean
         }
 
         Set<InetAddress> allEndpoints = Gossiper.instance.getLiveTokenOwners();
-        
+
         int blockFor = allEndpoints.size();
         final TruncateResponseHandler responseHandler = new TruncateResponseHandler(blockFor);
 
@@ -1732,15 +1733,15 @@ public class StorageProxy implements StorageProxyMBean
 
     public Long getTruncateRpcTimeout() { return DatabaseDescriptor.getTruncateRpcTimeout(); }
     public void setTruncateRpcTimeout(Long timeoutInMillis) { DatabaseDescriptor.setTruncateRpcTimeout(timeoutInMillis); }
-    
+
     public long getReadRepairAttempted() {
         return ReadRepairMetrics.attempted.count();
     }
-    
+
     public long getReadRepairRepairedBlocking() {
         return ReadRepairMetrics.repairedBlocking.count();
     }
-    
+
     public long getReadRepairRepairedBackground() {
         return ReadRepairMetrics.repairedBackground.count();
     }
