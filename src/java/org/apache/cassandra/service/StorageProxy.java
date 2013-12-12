@@ -23,7 +23,9 @@ import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.Random;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
@@ -409,6 +411,9 @@ public class StorageProxy implements StorageProxyMBean
         }
     }
 
+    private static final AtomicReference<TokenMetadata.Topology> cachedTopology = new AtomicReference<TokenMetadata.Topology>();
+    private static volatile long lastCachedEndpointVersion = -1;
+
     /*
      * Replicas are picked manually:
      * - replicas should be alive according to the failure detector
@@ -418,26 +423,58 @@ public class StorageProxy implements StorageProxyMBean
      */
     private static Collection<InetAddress> getBatchlogEndpoints(String localDataCenter, ConsistencyLevel consistencyLevel) throws UnavailableException
     {
-        // will include every known node in the DC, including localhost.
-        TokenMetadata.Topology topology = StorageService.instance.getTokenMetadata().cloneOnlyTokenMap().getTopology();
-        Collection<InetAddress> localMembers = topology.getDatacenterEndpoints().get(localDataCenter);
+        TokenMetadata tokenMetadata = StorageService.instance.getTokenMetadata();
+
+        // cache the topology since it's relatively expensive to compute
+        if (lastCachedEndpointVersion < tokenMetadata.getEndpointVersion())
+        {
+            // prevents cache stampedes
+            synchronized (cachedTopology)
+            {
+                if (lastCachedEndpointVersion < tokenMetadata.getEndpointVersion())
+                {
+                    // ok to do this first, since if it increments between now and the cloneOnlyTokenMap, this
+                    // will just cause a cache miss to occur and will run back thru the fill operation.
+                    lastCachedEndpointVersion = tokenMetadata.getEndpointVersion();
+
+                    // will include every known node in the DC, including localhost.
+                    TokenMetadata.Topology topology = tokenMetadata.cloneOnlyTokenMap().getTopology();
+                    cachedTopology.set(topology);
+
+                    logger.info("Batchlog endpoint cache filled.");
+                }
+            }
+        }
+
+        TokenMetadata.Topology topology = cachedTopology.get();
+        List<InetAddress> localMembers = new ArrayList<InetAddress>(topology.getDatacenterEndpoints().get(localDataCenter));
+
+        List<InetAddress> chosenEndpoints = new ArrayList<InetAddress>();
+        int startOffset = new Random().nextInt(localMembers.size());
 
         // special case for single-node datacenters
         if (localMembers.size() == 1)
             return localMembers;
 
-        // not a single-node cluster - don't count the local node.
-        localMembers.remove(FBUtilities.getBroadcastAddress());
-
-        // include only alive nodes
-        List<InetAddress> candidates = new ArrayList<InetAddress>(localMembers.size());
-        for (InetAddress member : localMembers)
+        // starts at some random point in the array, advances forward until the end, then loops
+        // around to the beginning, advancing again until it is back at the starting point again.
+        for (int i = 0; i < localMembers.size() && chosenEndpoints.size() < 2; i++)
         {
-            if (FailureDetector.instance.isAlive(member))
-                candidates.add(member);
+            int offset = (i + startOffset) % localMembers.size();
+            InetAddress member = localMembers.get(offset);
+
+            // skip localhost
+            if (member != FBUtilities.getBroadcastAddress())
+            {
+                // include only alive nodes
+                if (FailureDetector.instance.isAlive(member))
+                {
+                    chosenEndpoints.add(member);
+                }
+            }
         }
 
-        if (candidates.isEmpty())
+        if (chosenEndpoints.isEmpty())
         {
             if (consistencyLevel == ConsistencyLevel.ANY)
                 return Collections.singleton(FBUtilities.getBroadcastAddress());
@@ -445,15 +482,7 @@ public class StorageProxy implements StorageProxyMBean
             throw new UnavailableException(ConsistencyLevel.ONE, 1, 0);
         }
 
-        if (candidates.size() > 2)
-        {
-            //IEndpointSnitch snitch = DatabaseDescriptor.getEndpointSnitch();
-            //snitch.sortByProximity(FBUtilities.getBroadcastAddress(), candidates);
-            Collections.shuffle(candidates);
-            candidates = candidates.subList(0, 2);
-        }
-
-        return candidates;
+        return chosenEndpoints;
     }
 
     /**
