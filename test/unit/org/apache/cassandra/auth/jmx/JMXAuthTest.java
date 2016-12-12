@@ -229,42 +229,6 @@ public class JMXAuthTest extends CQLTester
         ((StubAuthorizer) DatabaseDescriptor.getAuthorizer()).clear();
     }
 
-    public static class StubLoginModule implements LoginModule
-    {
-        private CassandraPrincipal principal;
-        private Subject subject;
-
-        public StubLoginModule(){}
-
-        public void initialize(Subject subject, CallbackHandler callbackHandler, Map<String, ?> sharedState, Map<String, ?> options)
-        {
-            this.subject = subject;
-            principal = new CassandraPrincipal((String)options.get("role_name"));
-        }
-
-        public boolean login() throws LoginException
-        {
-            return true;
-        }
-
-        public boolean commit() throws LoginException
-        {
-            if (!subject.getPrincipals().contains(principal))
-                subject.getPrincipals().add(principal);
-            return true;
-        }
-
-        public boolean abort() throws LoginException
-        {
-            return true;
-        }
-
-        public boolean logout() throws LoginException
-        {
-            return true;
-        }
-    }
-
     // always answers false to isSuperUser and true to isAuthSetup complete - saves us having to initialize
     // a real IRoleManager and StorageService for the test
     public static class NoSuperUserAuthorizationProxy extends AuthorizationProxy
