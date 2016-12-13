@@ -20,6 +20,7 @@ package org.apache.cassandra.auth;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
@@ -60,6 +61,7 @@ import static org.apache.cassandra.auth.CassandraRoleManager.consistencyForRole;
 public class PasswordAuthenticator implements IAuthenticator
 {
     private static final Logger logger = LoggerFactory.getLogger(PasswordAuthenticator.class);
+    private static final List<String> supportedMechanisms = Lists.newArrayList("PLAIN");
 
     // name of the hash column.
     private static final String SALTED_HASH = "salted_hash";
@@ -203,6 +205,11 @@ public class PasswordAuthenticator implements IAuthenticator
             throw new AuthenticationException(String.format("Required key '%s' is missing for provided username %s", PASSWORD_KEY, username));
 
         return authenticate(username, password);
+    }
+
+    public List<String> getSupportedSaslMechanisms()
+    {
+        return supportedMechanisms;
     }
 
     public SaslNegotiator newSaslNegotiator(InetAddress clientAddress)
