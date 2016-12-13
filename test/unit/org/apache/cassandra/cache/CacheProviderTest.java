@@ -32,6 +32,7 @@ import java.util.List;
 
 
 import org.apache.cassandra.SchemaLoader;
+import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.utils.Pair;
 
@@ -103,8 +104,8 @@ public class CacheProviderTest
         {
             MessageDigest d1 = MessageDigest.getInstance("MD5");
             MessageDigest d2 = MessageDigest.getInstance("MD5");
-            UnfilteredRowIterators.digest(null, ((CachedBTreePartition) one).unfilteredIterator(), d1, MessagingService.current_version);
-            UnfilteredRowIterators.digest(null, ((CachedBTreePartition) two).unfilteredIterator(), d2, MessagingService.current_version);
+            UnfilteredRowIterators.digest(((CachedBTreePartition) one).unfilteredIterator(), d1, MessagingService.current_version);
+            UnfilteredRowIterators.digest(((CachedBTreePartition) two).unfilteredIterator(), d2, MessagingService.current_version);
             assertTrue(MessageDigest.isEqual(d1.digest(), d2.digest()));
         }
         catch (NoSuchAlgorithmException e)
@@ -135,7 +136,7 @@ public class CacheProviderTest
         List<Thread> threads = new ArrayList<>(100);
         for (int i = 0; i < 100; i++)
         {
-            Thread thread = new Thread(runnable);
+            Thread thread = NamedThreadFactory.createThread(runnable);
             threads.add(thread);
             thread.start();
         }

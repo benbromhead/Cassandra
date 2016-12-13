@@ -56,6 +56,7 @@ import org.apache.cassandra.auth.AuthMigrationListener;
 import org.apache.cassandra.batchlog.BatchRemoveVerbHandler;
 import org.apache.cassandra.batchlog.BatchStoreVerbHandler;
 import org.apache.cassandra.batchlog.BatchlogManager;
+import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
@@ -87,9 +88,6 @@ import org.apache.cassandra.service.paxos.CommitVerbHandler;
 import org.apache.cassandra.service.paxos.PrepareVerbHandler;
 import org.apache.cassandra.service.paxos.ProposeVerbHandler;
 import org.apache.cassandra.streaming.*;
-import org.apache.cassandra.thrift.EndpointDetails;
-import org.apache.cassandra.thrift.TokenRange;
-import org.apache.cassandra.thrift.cassandraConstants;
 import org.apache.cassandra.tracing.TraceKeyspace;
 import org.apache.cassandra.transport.ProtocolVersion;
 import org.apache.cassandra.utils.*;
@@ -123,6 +121,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      */
     @Deprecated
     private final LegacyJMXProgressSupport legacyProgressSupport;
+
+    private static final AtomicInteger threadCounter = new AtomicInteger(1);
 
     private static int getRingDelay()
     {
@@ -221,6 +221,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     /** This method updates the local token on disk  */
     public void setTokens(Collection<Token> tokens)
     {
+        assert tokens != null && !tokens.isEmpty() : "Node needs at least one token.";
         if (logger.isDebugEnabled())
             logger.debug("Setting tokens to {}", tokens);
         SystemKeyspace.updateTokens(tokens);
@@ -257,12 +258,14 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         legacyProgressSupport = new LegacyJMXProgressSupport(this, jmxObjectName);
 
+        ReadCommandVerbHandler readHandler = new ReadCommandVerbHandler();
+
         /* register the verb handlers */
         MessagingService.instance().registerVerbHandlers(MessagingService.Verb.MUTATION, new MutationVerbHandler());
         MessagingService.instance().registerVerbHandlers(MessagingService.Verb.READ_REPAIR, new ReadRepairVerbHandler());
-        MessagingService.instance().registerVerbHandlers(MessagingService.Verb.READ, new ReadCommandVerbHandler());
-        MessagingService.instance().registerVerbHandlers(MessagingService.Verb.RANGE_SLICE, new RangeSliceVerbHandler());
-        MessagingService.instance().registerVerbHandlers(MessagingService.Verb.PAGED_RANGE, new RangeSliceVerbHandler());
+        MessagingService.instance().registerVerbHandlers(MessagingService.Verb.READ, readHandler);
+        MessagingService.instance().registerVerbHandlers(MessagingService.Verb.RANGE_SLICE, readHandler);
+        MessagingService.instance().registerVerbHandlers(MessagingService.Verb.PAGED_RANGE, readHandler);
         MessagingService.instance().registerVerbHandlers(MessagingService.Verb.COUNTER_MUTATION, new CounterMutationVerbHandler());
         MessagingService.instance().registerVerbHandlers(MessagingService.Verb.TRUNCATE, new TruncateVerbHandler());
         MessagingService.instance().registerVerbHandlers(MessagingService.Verb.PAXOS_PREPARE, new PrepareVerbHandler());
@@ -349,37 +352,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         return Gossiper.instance.isEnabled();
     }
 
-    // should only be called via JMX
-    public synchronized void startRPCServer()
-    {
-        checkServiceAllowedToStart("thrift");
-
-        if (daemon == null)
-        {
-            throw new IllegalStateException("No configured daemon");
-        }
-        daemon.thriftServer.start();
-    }
-
-    public void stopRPCServer()
-    {
-        if (daemon == null)
-        {
-            throw new IllegalStateException("No configured daemon");
-        }
-        if (daemon.thriftServer != null)
-            daemon.thriftServer.stop();
-    }
-
-    public boolean isRPCServerRunning()
-    {
-        if ((daemon == null) || (daemon.thriftServer == null))
-        {
-            return false;
-        }
-        return daemon.thriftServer.isRunning();
-    }
-
     public synchronized void startNativeTransport()
     {
         checkServiceAllowedToStart("native transport");
@@ -424,11 +396,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             logger.error("Stopping gossiper");
             stopGossiping();
         }
-        if (isRPCServerRunning())
-        {
-            logger.error("Stopping RPC server");
-            stopRPCServer();
-        }
         if (isNativeTransportRunning())
         {
             logger.error("Stopping native transport");
@@ -436,9 +403,19 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
     }
 
+    /**
+     * Set the Gossip flag RPC_READY to false and then
+     * shutdown the client services (thrift and CQL).
+     *
+     * Note that other nodes will do this for us when
+     * they get the Gossip shutdown message, so even if
+     * we don't get time to broadcast this, it is not a problem.
+     *
+     * See {@link Gossiper#markAsShutdown(InetAddress)}
+     */
     private void shutdownClientServers()
     {
-        stopRPCServer();
+        setRpcReady(false);
         stopNativeTransport();
     }
 
@@ -601,7 +578,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     public synchronized void initServer(int delay) throws ConfigurationException
     {
         logger.info("Cassandra version: {}", FBUtilities.getReleaseVersionString());
-        logger.info("Thrift API version: {}", cassandraConstants.VERSION);
         logger.info("CQL supported versions: {} (default: {})",
                 StringUtils.join(ClientState.getCQLSupportedVersion(), ", "), ClientState.DEFAULT_CQL_VERSION);
         logger.info("Native protocol supported versions: {} (default: {})",
@@ -620,7 +596,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
 
         // daemon threads, like our executors', continue to run while shutdown hooks are invoked
-        drainOnShutdown = new Thread(new WrappedRunnable()
+        drainOnShutdown = NamedThreadFactory.createThread(new WrappedRunnable()
         {
             @Override
             public void runMayThrow() throws InterruptedException, ExecutionException, IOException
@@ -880,8 +856,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             if (useStrictConsistency && !allowSimultaneousMoves() &&
                     (
                         tokenMetadata.getBootstrapTokens().valueSet().size() > 0 ||
-                        tokenMetadata.getLeavingEndpoints().size() > 0 ||
-                        tokenMetadata.getMovingEndpoints().size() > 0
+                        tokenMetadata.getSizeOfLeavingEndpoints() > 0 ||
+                        tokenMetadata.getSizeOfMovingEndpoints() > 0
                     ))
             {
                 throw new UnsupportedOperationException("Other bootstrapping/leaving/moving nodes detected, cannot bootstrap while cassandra.consistent.rangemovement is true");
@@ -986,7 +962,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         {
             if (dataAvailable)
             {
-                finishJoiningRing(bootstrap);
+                finishJoiningRing(bootstrap, bootstrapTokens);
                 // remove the existing info about the replaced node.
                 if (!current.isEmpty())
                 {
@@ -1042,7 +1018,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         else if (isSurveyMode)
         {
             logger.info("Leaving write survey mode and joining ring at operator request");
-            finishJoiningRing(resumedBootstrap);
+            finishJoiningRing(resumedBootstrap, SystemKeyspace.getSavedTokens());
             isSurveyMode = false;
         }
     }
@@ -1054,13 +1030,13 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 .forEach(cfs -> cfs.indexManager.executePreJoinTasksBlocking(bootstrap));
     }
 
-    private void finishJoiningRing(boolean didBootstrap)
+    private void finishJoiningRing(boolean didBootstrap, Collection<Token> tokens)
     {
         // start participating in the ring.
         setMode(Mode.JOINING, "Finish joining ring", true);
         SystemKeyspace.setBootstrapState(SystemKeyspace.BootstrapState.COMPLETED);
         executePreJoinTasks(didBootstrap);
-        setTokens(bootstrapTokens);
+        setTokens(tokens);
 
         assert tokenMetadata.sortedTokens().size() > 0;
         doAuthSetup();
@@ -1747,32 +1723,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         : getRangeToAddressMap(keyspace);
 
         for (Map.Entry<Range<Token>, List<InetAddress>> entry : rangeToAddressMap.entrySet())
-        {
-            Range<Token> range = entry.getKey();
-            List<InetAddress> addresses = entry.getValue();
-            List<String> endpoints = new ArrayList<>(addresses.size());
-            List<String> rpc_endpoints = new ArrayList<>(addresses.size());
-            List<EndpointDetails> epDetails = new ArrayList<>(addresses.size());
-
-            for (InetAddress endpoint : addresses)
-            {
-                EndpointDetails details = new EndpointDetails();
-                details.host = endpoint.getHostAddress();
-                details.datacenter = DatabaseDescriptor.getEndpointSnitch().getDatacenter(endpoint);
-                details.rack = DatabaseDescriptor.getEndpointSnitch().getRack(endpoint);
-
-                endpoints.add(details.host);
-                rpc_endpoints.add(getRpcaddress(endpoint));
-
-                epDetails.add(details);
-            }
-
-            TokenRange tr = new TokenRange(tf.toString(range.left.getToken()), tf.toString(range.right.getToken()), endpoints)
-                                    .setEndpoint_details(epDetails)
-                                    .setRpc_endpoints(rpc_endpoints);
-
-            ranges.add(tr);
-        }
+            ranges.add(TokenRange.create(tf, entry.getKey(), entry.getValue()));
 
         return ranges;
     }
@@ -2082,13 +2033,25 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     public boolean isRpcReady(InetAddress endpoint)
     {
-        return MessagingService.instance().getVersion(endpoint) < MessagingService.VERSION_22 ||
-                Gossiper.instance.getEndpointStateForEndpoint(endpoint).isRpcReady();
+        return Gossiper.instance.getEndpointStateForEndpoint(endpoint).isRpcReady();
     }
 
+    /**
+     * Set the RPC status. Because when draining a node we need to set the RPC
+     * status to not ready, and drain is called by the shutdown hook, it may be that value is false
+     * and there is no local endpoint state. In this case it's OK to just do nothing. Therefore,
+     * we assert that the local endpoint state is not null only when value is true.
+     *
+     * @param value - true indicates that RPC is ready, false indicates the opposite.
+     */
     public void setRpcReady(boolean value)
     {
-        Gossiper.instance.addLocalApplicationState(ApplicationState.RPC_READY, valueFactory.rpcReady(value));
+        EndpointState state = Gossiper.instance.getEndpointStateForEndpoint(FBUtilities.getBroadcastAddress());
+        // if value is false we're OK with a null state, if it is true we are not.
+        assert !value || state != null;
+
+        if (state != null)
+            Gossiper.instance.addLocalApplicationState(ApplicationState.RPC_READY, valueFactory.rpcReady(value));
     }
 
     private Collection<Token> getTokensFor(InetAddress endpoint)
@@ -3506,7 +3469,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             return 0;
 
         int cmd = nextRepairCommand.incrementAndGet();
-        new Thread(createRepairTask(cmd, keyspace, options, legacy)).start();
+        NamedThreadFactory.createThread(createRepairTask(cmd, keyspace, options, legacy), "Repair-Task-" + threadCounter.incrementAndGet()).start();
         return cmd;
     }
 
@@ -4208,7 +4171,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      */
     public void forceRemoveCompletion()
     {
-        if (!replicatingNodes.isEmpty()  || !tokenMetadata.getLeavingEndpoints().isEmpty())
+        if (!replicatingNodes.isEmpty()  || tokenMetadata.getSizeOfLeavingEndpoints() > 0)
         {
             logger.warn("Removal not confirmed for for {}", StringUtils.join(this.replicatingNodes, ","));
             for (InetAddress endpoint : tokenMetadata.getLeavingEndpoints())

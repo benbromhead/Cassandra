@@ -104,7 +104,7 @@ elif webbrowser._tryorder[0] == 'xdg-open' and os.environ.get('XDG_DATA_DIRS', '
     webbrowser._tryorder.remove('xdg-open')
     webbrowser._tryorder.append('xdg-open')
 
-# use bundled libs for python-cql and thrift, if available. if there
+# use bundled lib for python-cql if available. if there
 # is a ../lib dir, use bundled libs there preferentially.
 ZIPLIB_DIRS = [os.path.join(CASSANDRA_PATH, 'lib')]
 myplatform = platform.system()
@@ -1318,12 +1318,10 @@ class Shell(cmd.Cmd):
                 name = protect_name(ksmeta.name)
                 print 'Keyspace %s' % (name,)
                 print '---------%s' % ('-' * len(name))
-                cmd.Cmd.columnize(self, protect_names(ksmeta.functions.keys()))
-                print
+                self._columnize_unicode(ksmeta.functions.keys())
         else:
             ksmeta = self.get_keyspace_meta(ksname)
-            cmd.Cmd.columnize(self, protect_names(ksmeta.functions.keys()))
-            print
+            self._columnize_unicode(ksmeta.functions.keys())
 
     def describe_function(self, ksname, functionname):
         if ksname is None:
@@ -1345,12 +1343,10 @@ class Shell(cmd.Cmd):
                 name = protect_name(ksmeta.name)
                 print 'Keyspace %s' % (name,)
                 print '---------%s' % ('-' * len(name))
-                cmd.Cmd.columnize(self, protect_names(ksmeta.aggregates.keys()))
-                print
+                self._columnize_unicode(ksmeta.aggregates.keys())
         else:
             ksmeta = self.get_keyspace_meta(ksname)
-            cmd.Cmd.columnize(self, protect_names(ksmeta.aggregates.keys()))
-            print
+            self._columnize_unicode(ksmeta.aggregates.keys())
 
     def describe_aggregate(self, ksname, aggregatename):
         if ksname is None:
@@ -1372,12 +1368,10 @@ class Shell(cmd.Cmd):
                 name = protect_name(ksmeta.name)
                 print 'Keyspace %s' % (name,)
                 print '---------%s' % ('-' * len(name))
-                cmd.Cmd.columnize(self, protect_names(ksmeta.user_types.keys()))
-                print
+                self._columnize_unicode(ksmeta.user_types.keys(), quote=True)
         else:
             ksmeta = self.get_keyspace_meta(ksname)
-            cmd.Cmd.columnize(self, protect_names(ksmeta.user_types.keys()))
-            print
+            self._columnize_unicode(ksmeta.user_types.keys(), quote=True)
 
     def describe_usertype(self, ksname, typename):
         if ksname is None:
@@ -1391,6 +1385,16 @@ class Shell(cmd.Cmd):
         except KeyError:
             raise UserTypeNotFound("User type %r not found" % typename)
         print usertype.export_as_string()
+
+    def _columnize_unicode(self, name_list, quote=False):
+        """
+        Used when columnizing identifiers that may contain unicode
+        """
+        names = [n.encode('utf-8') for n in name_list]
+        if quote:
+            names = protect_names(names)
+        cmd.Cmd.columnize(self, names)
+        print
 
     def describe_cluster(self):
         print '\nCluster: %s' % self.get_cluster_name()
@@ -1687,8 +1691,8 @@ class Shell(cmd.Cmd):
         SHOW VERSION
 
           Shows the version and build of the connected Cassandra instance, as
-          well as the versions of the CQL spec and the Thrift protocol that
-          the connected Cassandra instance understands.
+          well as the version of the CQL spec that the connected Cassandra
+          instance understands.
 
         SHOW HOST
 

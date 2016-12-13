@@ -197,6 +197,7 @@ public abstract class CQLTester
         ThreadAwareSecurityManager.install();
 
         Keyspace.setInitialized();
+        SystemKeyspace.persistLocalMetadata();
         isServerPrepared = true;
     }
 
@@ -759,7 +760,7 @@ public abstract class CQLTester
 
     protected ResultMessage.Prepared prepare(String query) throws Throwable
     {
-        return QueryProcessor.prepare(formatQuery(query), ClientState.forInternalCalls(), false);
+        return QueryProcessor.prepare(formatQuery(query), ClientState.forInternalCalls());
     }
 
     protected UntypedResultSet execute(String query, Object... values) throws Throwable

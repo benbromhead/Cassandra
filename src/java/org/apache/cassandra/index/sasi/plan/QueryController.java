@@ -63,11 +63,6 @@ public class QueryController
         this.executionStart = System.nanoTime();
     }
 
-    public boolean isForThrift()
-    {
-        return command.isForThrift();
-    }
-
     public CFMetaData metadata()
     {
         return command.metadata();
@@ -101,8 +96,7 @@ public class QueryController
             throw new NullPointerException();
         try
         {
-            SinglePartitionReadCommand partition = SinglePartitionReadCommand.create(command.isForThrift(),
-                                                                                     cfs.metadata,
+            SinglePartitionReadCommand partition = SinglePartitionReadCommand.create(cfs.metadata,
                                                                                      command.nowInSec(),
                                                                                      command.columnFilter(),
                                                                                      command.rowFilter().withoutExpressions(),
@@ -236,7 +230,7 @@ public class QueryController
                 continue;
 
             Set<SSTableIndex> indexes = applyScope(view.match(e));
-            if (primaryIndexes.size() > indexes.size())
+            if (expression == null || primaryIndexes.size() > indexes.size())
             {
                 primaryIndexes = indexes;
                 expression = e;

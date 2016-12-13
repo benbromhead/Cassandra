@@ -33,6 +33,7 @@ import org.junit.Test;
 
 import org.apache.cassandra.Util;
 import org.apache.cassandra.UpdateBuilder;
+import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
@@ -813,7 +814,7 @@ public class SSTableRewriterTest extends SSTableWriterTestBase
                 }
             }
         };
-        Thread t = new Thread(r);
+        Thread t = NamedThreadFactory.createThread(r);
         try
         {
             t.start();
@@ -895,7 +896,7 @@ public class SSTableRewriterTest extends SSTableWriterTestBase
                 }
             }
         };
-        Thread t = new Thread(r);
+        Thread t = NamedThreadFactory.createThread(r);
         try
         {
             t.start();
@@ -933,9 +934,9 @@ public class SSTableRewriterTest extends SSTableWriterTestBase
         for (int f = 0 ; f < fileCount ; f++)
         {
             File dir = cfs.getDirectories().getDirectoryForNewSSTables();
-            String filename = cfs.getSSTablePath(dir);
+            Descriptor desc = cfs.newSSTableDescriptor(dir);
 
-            try (SSTableTxnWriter writer = SSTableTxnWriter.create(cfs, filename, 0, 0, new SerializationHeader(true, cfs.metadata, cfs.metadata.partitionColumns(), EncodingStats.NO_STATS)))
+            try (SSTableTxnWriter writer = SSTableTxnWriter.create(cfs, desc, 0, 0, new SerializationHeader(true, cfs.metadata, cfs.metadata.partitionColumns(), EncodingStats.NO_STATS)))
             {
                 int end = f == fileCount - 1 ? partitionCount : ((f + 1) * partitionCount) / fileCount;
                 for ( ; i < end ; i++)

@@ -83,11 +83,6 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
         return new CQLFilter(new ArrayList<>(capacity));
     }
 
-    public static RowFilter forThrift(int capacity)
-    {
-        return new ThriftFilter(new ArrayList<>(capacity));
-    }
-
     public SimpleExpression add(ColumnDefinition def, Operator op, ByteBuffer value)
     {
         SimpleExpression expression = new SimpleExpression(def, op, value);
@@ -98,12 +93,6 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
     public void addMapEquality(ColumnDefinition def, ByteBuffer key, Operator op, ByteBuffer value)
     {
         add(new MapEqualityExpression(def, key, op, value));
-    }
-
-    public void addThriftExpression(CFMetaData metadata, ByteBuffer name, Operator op, ByteBuffer value)
-    {
-        assert (this instanceof ThriftFilter);
-        add(new ThriftExpression(metadata, name, op, value));
     }
 
     public void addCustomIndexExpression(CFMetaData cfm, IndexMetadata targetIndex, ByteBuffer value)
@@ -235,20 +224,6 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
         return expressions.iterator();
     }
 
-    private static Clustering makeCompactClustering(CFMetaData metadata, ByteBuffer name)
-    {
-        assert metadata.isCompactTable();
-        if (metadata.isCompound())
-        {
-            List<ByteBuffer> values = CompositeType.splitName(name);
-            return Clustering.make(values.toArray(new ByteBuffer[metadata.comparator.size()]));
-        }
-        else
-        {
-            return Clustering.make(name);
-        }
-    }
-
     @Override
     public String toString()
     {
@@ -328,57 +303,15 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
         }
     }
 
-    private static class ThriftFilter extends RowFilter
-    {
-        private ThriftFilter(List<Expression> expressions)
-        {
-            super(expressions);
-        }
-
-        public UnfilteredPartitionIterator filter(UnfilteredPartitionIterator iter, final int nowInSec)
-        {
-            if (expressions.isEmpty())
-                return iter;
-
-            class IsSatisfiedThriftFilter extends Transformation<UnfilteredRowIterator>
-            {
-                @Override
-                public UnfilteredRowIterator applyToPartition(UnfilteredRowIterator iter)
-                {
-                    // Thrift does not filter rows, it filters entire partition if any of the expression is not
-                    // satisfied, which forces us to materialize the result (in theory we could materialize only
-                    // what we need which might or might not be everything, but we keep it simple since in practice
-                    // it's not worth that it has ever been).
-                    ImmutableBTreePartition result = ImmutableBTreePartition.create(iter);
-                    iter.close();
-
-                    // The partition needs to have a row for every expression, and the expression needs to be valid.
-                    for (Expression expr : expressions)
-                    {
-                        assert expr instanceof ThriftExpression;
-                        Row row = result.getRow(makeCompactClustering(iter.metadata(), expr.column().name.bytes));
-                        if (row == null || !expr.isSatisfiedBy(iter.metadata(), iter.partitionKey(), row))
-                            return null;
-                    }
-                    // If we get there, it means all expressions where satisfied, so return the original result
-                    return result.unfilteredIterator();
-                }
-            }
-            return Transformation.apply(iter, new IsSatisfiedThriftFilter());
-        }
-
-        protected RowFilter withNewExpressions(List<Expression> expressions)
-        {
-            return new ThriftFilter(expressions);
-        }
-    }
-
     public static abstract class Expression
     {
         private static final Serializer serializer = new Serializer();
 
-        // Note: the order of this enum matter, it's used for serialization
-        protected enum Kind { SIMPLE, MAP_EQUALITY, THRIFT_DYN_EXPR, CUSTOM, USER }
+        // Note: the order of this enum matter, it's used for serialization,
+        // and this is why we have some UNUSEDX for values we don't use anymore
+        // (we could clean those on a major protocol update, but it's not worth
+        // the trouble for now)
+        protected enum Kind { SIMPLE, MAP_EQUALITY, UNUSED1, CUSTOM, USER }
 
         protected abstract Kind kind();
         protected final ColumnDefinition column;
@@ -509,16 +442,12 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
         {
             public void serialize(Expression expression, DataOutputPlus out, int version) throws IOException
             {
-                if (version >= MessagingService.VERSION_30)
-                    out.writeByte(expression.kind().ordinal());
+                out.writeByte(expression.kind().ordinal());
 
                 // Custom expressions include neither a column or operator, but all
-                // other expressions do. Also, custom expressions are 3.0+ only, so
-                // the column & operator will always be the first things written for
-                // any pre-3.0 version
+                // other expressions do.
                 if (expression.kind() == Kind.CUSTOM)
                 {
-                    assert version >= MessagingService.VERSION_30;
                     IndexMetadata.serializer.serialize(((CustomExpression)expression).targetIndex, out, version);
                     ByteBufferUtil.writeWithShortLength(expression.value, out);
                     return;
@@ -526,7 +455,6 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
 
                 if (expression.kind() == Kind.USER)
                 {
-                    assert version >= MessagingService.VERSION_30;
                     UserExpression.serialize((UserExpression)expression, out, version);
                     return;
                 }
@@ -541,97 +469,52 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
                         break;
                     case MAP_EQUALITY:
                         MapEqualityExpression mexpr = (MapEqualityExpression)expression;
-                        if (version < MessagingService.VERSION_30)
-                        {
-                            ByteBufferUtil.writeWithShortLength(mexpr.getIndexValue(), out);
-                        }
-                        else
-                        {
-                            ByteBufferUtil.writeWithShortLength(mexpr.key, out);
-                            ByteBufferUtil.writeWithShortLength(mexpr.value, out);
-                        }
-                        break;
-                    case THRIFT_DYN_EXPR:
-                        ByteBufferUtil.writeWithShortLength(((ThriftExpression)expression).value, out);
+                        ByteBufferUtil.writeWithShortLength(mexpr.key, out);
+                        ByteBufferUtil.writeWithShortLength(mexpr.value, out);
                         break;
                 }
             }
 
             public Expression deserialize(DataInputPlus in, int version, CFMetaData metadata) throws IOException
             {
-                Kind kind = null;
-                ByteBuffer name;
-                Operator operator;
-                ColumnDefinition column;
+                Kind kind = Kind.values()[in.readByte()];
 
-                if (version >= MessagingService.VERSION_30)
+                // custom expressions (3.0+ only) do not contain a column or operator, only a value
+                if (kind == Kind.CUSTOM)
                 {
-                    kind = Kind.values()[in.readByte()];
-                    // custom expressions (3.0+ only) do not contain a column or operator, only a value
-                    if (kind == Kind.CUSTOM)
-                    {
-                        return new CustomExpression(metadata,
-                                                    IndexMetadata.serializer.deserialize(in, version, metadata),
-                                                    ByteBufferUtil.readWithShortLength(in));
-                    }
-
-                    if (kind == Kind.USER)
-                    {
-                        return UserExpression.deserialize(in, version, metadata);
-                    }
+                    return new CustomExpression(metadata,
+                            IndexMetadata.serializer.deserialize(in, version, metadata),
+                            ByteBufferUtil.readWithShortLength(in));
                 }
 
-                name = ByteBufferUtil.readWithShortLength(in);
-                operator = Operator.readFrom(in);
-                column = metadata.getColumnDefinition(name);
+                if (kind == Kind.USER)
+                    return UserExpression.deserialize(in, version, metadata);
+
+                ByteBuffer name = ByteBufferUtil.readWithShortLength(in);
+                Operator operator = Operator.readFrom(in);
+                ColumnDefinition column = metadata.getColumnDefinition(name);
+
                 if (!metadata.isCompactTable() && column == null)
                     throw new RuntimeException("Unknown (or dropped) column " + UTF8Type.instance.getString(name) + " during deserialization");
 
-                if (version < MessagingService.VERSION_30)
-                {
-                    if (column == null)
-                        kind = Kind.THRIFT_DYN_EXPR;
-                    else if (column.type instanceof MapType && operator == Operator.EQ)
-                        kind = Kind.MAP_EQUALITY;
-                    else
-                        kind = Kind.SIMPLE;
-                }
-
-                assert kind != null;
                 switch (kind)
                 {
                     case SIMPLE:
                         return new SimpleExpression(column, operator, ByteBufferUtil.readWithShortLength(in));
                     case MAP_EQUALITY:
-                        ByteBuffer key, value;
-                        if (version < MessagingService.VERSION_30)
-                        {
-                            ByteBuffer composite = ByteBufferUtil.readWithShortLength(in);
-                            key = CompositeType.extractComponent(composite, 0);
-                            value = CompositeType.extractComponent(composite, 0);
-                        }
-                        else
-                        {
-                            key = ByteBufferUtil.readWithShortLength(in);
-                            value = ByteBufferUtil.readWithShortLength(in);
-                        }
+                        ByteBuffer key = ByteBufferUtil.readWithShortLength(in);
+                        ByteBuffer value = ByteBufferUtil.readWithShortLength(in);
                         return new MapEqualityExpression(column, key, operator, value);
-                    case THRIFT_DYN_EXPR:
-                        return new ThriftExpression(metadata, name, operator, ByteBufferUtil.readWithShortLength(in));
                 }
                 throw new AssertionError();
             }
 
-
             public long serializedSize(Expression expression, int version)
             {
-                // version 3.0+ includes a byte for Kind
-                long size = version >= MessagingService.VERSION_30 ? 1 : 0;
+                long size = 1; // kind byte
 
                 // Custom expressions include neither a column or operator, but all
-                // other expressions do. Also, custom expressions are 3.0+ only, so
-                // the column & operator will always be the first things written for
-                // any pre-3.0 version
+                // other expressions do.
                 if (expression.kind() != Kind.CUSTOM && expression.kind() != Kind.USER)
                     size += ByteBufferUtil.serializedSizeWithShortLength(expression.column().name.bytes)
                             + expression.operator.serializedSize();
@@ -643,23 +526,16 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
                         break;
                     case MAP_EQUALITY:
                         MapEqualityExpression mexpr = (MapEqualityExpression)expression;
-                        if (version < MessagingService.VERSION_30)
-                            size += ByteBufferUtil.serializedSizeWithShortLength(mexpr.getIndexValue());
-                        else
-                            size += ByteBufferUtil.serializedSizeWithShortLength(mexpr.key)
-                                  + ByteBufferUtil.serializedSizeWithShortLength(mexpr.value);
-                        break;
-                    case THRIFT_DYN_EXPR:
-                        size += ByteBufferUtil.serializedSizeWithShortLength(((ThriftExpression)expression).value);
+                        size += ByteBufferUtil.serializedSizeWithShortLength(mexpr.key)
+                              + ByteBufferUtil.serializedSizeWithShortLength(mexpr.value);
                         break;
                     case CUSTOM:
-                        if (version >= MessagingService.VERSION_30)
-                            size += IndexMetadata.serializer.serializedSize(((CustomExpression)expression).targetIndex, version)
-                                   + ByteBufferUtil.serializedSizeWithShortLength(expression.value);
+                        size += IndexMetadata.serializer.serializedSize(((CustomExpression)expression).targetIndex, version)
+                               + ByteBufferUtil.serializedSizeWithShortLength(expression.value);
                         break;
                     case USER:
-                        if (version >= MessagingService.VERSION_30)
-                            size += UserExpression.serializedSize((UserExpression)expression, version);
+                        size += UserExpression.serializedSize((UserExpression)expression, version);
+                        break;
                 }
                 return size;
             }
@@ -909,54 +785,6 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
     }
 
     /**
-     * An expression of the form 'name' = 'value', but where 'name' is actually the
-     * clustering value for a compact table. This is only for thrift.
-     */
-    private static class ThriftExpression extends Expression
-    {
-        public ThriftExpression(CFMetaData metadata, ByteBuffer name, Operator operator, ByteBuffer value)
-        {
-            super(makeDefinition(metadata, name), operator, value);
-            assert metadata.isCompactTable();
-        }
-
-        private static ColumnDefinition makeDefinition(CFMetaData metadata, ByteBuffer name)
-        {
-            ColumnDefinition def = metadata.getColumnDefinition(name);
-            if (def != null)
-                return def;
-
-            // In thrift, we actually allow expression on non-defined columns for the sake of filtering. To accomodate
-            // this we create a "fake" definition. This is messy but it works so is probably good enough.
-            return ColumnDefinition.regularDef(metadata, name, metadata.compactValueColumn().type);
-        }
-
-        public boolean isSatisfiedBy(CFMetaData metadata, DecoratedKey partitionKey, Row row)
-        {
-            assert value != null;
-
-            // On thrift queries, even if the column expression is a "static" one, we'll have convert it as a "dynamic"
-            // one in ThriftResultsMerger, so we always expect it to be a dynamic one. Further, we expect this is only
-            // called when the row clustering does match the column (see ThriftFilter above).
-            assert row.clustering().equals(makeCompactClustering(metadata, column.name.bytes));
-            Cell cell = row.getCell(metadata.compactValueColumn());
-            return cell != null && operator.isSatisfiedBy(column.type, cell.value(), value);
-        }
-
-        @Override
-        public String toString()
-        {
-            return String.format("%s %s %s", column.name, operator, column.type.getString(value));
-        }
-
-        @Override
-        protected Kind kind()
-        {
-            return Kind.THRIFT_DYN_EXPR;
-        }
-    }
-
-    /**
      * A custom index expression for use with 2i implementations which support custom syntax and which are not
      * necessarily linked to a single column in the base table.
      */
@@ -1110,7 +938,7 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
     {
         public void serialize(RowFilter filter, DataOutputPlus out, int version) throws IOException
         {
-            out.writeBoolean(filter instanceof ThriftFilter);
+            out.writeBoolean(false); // Old "is for thrift" boolean
             out.writeUnsignedVInt(filter.expressions.size());
             for (Expression expr : filter.expressions)
                 Expression.serializer.serialize(expr, out, version);
@@ -1119,20 +947,18 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
 
         public RowFilter deserialize(DataInputPlus in, int version, CFMetaData metadata) throws IOException
         {
-            boolean forThrift = in.readBoolean();
+            in.readBoolean(); // Unused
             int size = (int)in.readUnsignedVInt();
             List<Expression> expressions = new ArrayList<>(size);
             for (int i = 0; i < size; i++)
                 expressions.add(Expression.serializer.deserialize(in, version, metadata));
 
-            return forThrift
-                 ? new ThriftFilter(expressions)
-                 : new CQLFilter(expressions);
+            return new CQLFilter(expressions);
         }
 
         public long serializedSize(RowFilter filter, int version)
         {
-            long size = 1 // forThrift
+            long size = 1 // unused boolean
                       + TypeSizes.sizeofUnsignedVInt(filter.expressions.size());
             for (Expression expr : filter.expressions)
                 size += Expression.serializer.serializedSize(expr, version);

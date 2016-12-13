@@ -113,7 +113,6 @@ public abstract class UnfilteredPartitionIterators
         assert listener != null;
         assert !iterators.isEmpty();
 
-        final boolean isForThrift = iterators.get(0).isForThrift();
         final CFMetaData metadata = iterators.get(0).metadata();
 
         final MergeIterator<UnfilteredRowIterator, UnfilteredRowIterator> merged = MergeIterator.get(iterators, partitionComparator, new MergeIterator.Reducer<UnfilteredRowIterator, UnfilteredRowIterator>()
@@ -155,11 +154,6 @@ public abstract class UnfilteredPartitionIterators
 
         return new AbstractUnfilteredPartitionIterator()
         {
-            public boolean isForThrift()
-            {
-                return isForThrift;
-            }
-
             public CFMetaData metadata()
             {
                 return metadata;
@@ -190,7 +184,6 @@ public abstract class UnfilteredPartitionIterators
         if (iterators.size() == 1)
             return iterators.get(0);
 
-        final boolean isForThrift = iterators.get(0).isForThrift();
         final CFMetaData metadata = iterators.get(0).metadata();
 
         final MergeIterator<UnfilteredRowIterator, UnfilteredRowIterator> merged = MergeIterator.get(iterators, partitionComparator, new MergeIterator.Reducer<UnfilteredRowIterator, UnfilteredRowIterator>()
@@ -221,11 +214,6 @@ public abstract class UnfilteredPartitionIterators
 
         return new AbstractUnfilteredPartitionIterator()
         {
-            public boolean isForThrift()
-            {
-                return isForThrift;
-            }
-
             public CFMetaData metadata()
             {
                 return metadata;
@@ -252,13 +240,11 @@ public abstract class UnfilteredPartitionIterators
     /**
      * Digests the the provided iterator.
      *
-     * @param command the command that has yield {@code iterator}. This can be null if {@code version >= MessagingService.VERSION_30}
-     * as this is only used when producing digest to be sent to legacy nodes.
      * @param iterator the iterator to digest.
      * @param digest the {@code MessageDigest} to use for the digest.
      * @param version the messaging protocol to use when producing the digest.
      */
-    public static void digest(ReadCommand command, UnfilteredPartitionIterator iterator, MessageDigest digest, int version)
+    public static void digest(UnfilteredPartitionIterator iterator, MessageDigest digest, int version)
     {
         try (UnfilteredPartitionIterator iter = iterator)
         {
@@ -266,7 +252,7 @@ public abstract class UnfilteredPartitionIterators
             {
                 try (UnfilteredRowIterator partition = iter.next())
                 {
-                    UnfilteredRowIterators.digest(command, partition, digest, version);
+                    UnfilteredRowIterators.digest(partition, digest, version);
                 }
             }
         }
@@ -303,9 +289,9 @@ public abstract class UnfilteredPartitionIterators
     {
         public void serialize(UnfilteredPartitionIterator iter, ColumnFilter selection, DataOutputPlus out, int version) throws IOException
         {
-            assert version >= MessagingService.VERSION_30; // We handle backward compatibility directy in ReadResponse.LegacyRangeSliceReplySerializer
-
-            out.writeBoolean(iter.isForThrift());
+            // Previously, a boolean indicating if this was for a thrift query.
+            // Unused since 4.0 but kept on wire for compatibility.
+            out.writeBoolean(false);
             while (iter.hasNext())
             {
                 out.writeBoolean(true);
@@ -319,19 +305,14 @@ public abstract class UnfilteredPartitionIterators
 
         public UnfilteredPartitionIterator deserialize(final DataInputPlus in, final int version, final CFMetaData metadata, final ColumnFilter selection, final SerializationHelper.Flag flag) throws IOException
         {
-            assert version >= MessagingService.VERSION_30; // We handle backward compatibility directy in ReadResponse.LegacyRangeSliceReplySerializer
-            final boolean isForThrift = in.readBoolean();
+            // Skip now unused isForThrift boolean
+            in.readBoolean();
 
             return new AbstractUnfilteredPartitionIterator()
             {
                 private UnfilteredRowIterator next;
                 private boolean hasNext;
                 private boolean nextReturned = true;
-
-                public boolean isForThrift()
-                {
-                    return isForThrift;
-                }
 
                 public CFMetaData metadata()
                 {

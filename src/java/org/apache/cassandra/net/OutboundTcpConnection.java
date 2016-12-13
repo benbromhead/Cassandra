@@ -46,6 +46,7 @@ import net.jpountz.lz4.LZ4Compressor;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.xxhash.XXHashFactory;
 
+import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.io.util.BufferedDataOutputStreamPlus;
 import org.apache.cassandra.io.util.WrappedDataOutputStreamPlus;
@@ -81,6 +82,9 @@ public class OutboundTcpConnection extends FastThreadLocalThread
      */
     private static final String BUFFER_SIZE_PROPERTY = PREFIX + "otc_buffer_size";
     private static final int BUFFER_SIZE = Integer.getInteger(BUFFER_SIZE_PROPERTY, 1024 * 64);
+
+    //Size of 3 elements added to every message
+    private static final int PROTOCOL_MAGIC_ID_TIMESTAMP_SIZE = 12;
 
     private static CoalescingStrategy newCoalescingStrategy(String displayName)
     {
@@ -280,7 +284,9 @@ public class OutboundTcpConnection extends FastThreadLocalThread
             {
                 UUID sessionId = UUIDGen.getUUID(ByteBuffer.wrap(sessionBytes));
                 TraceState state = Tracing.instance.get(sessionId);
-                String message = String.format("Sending %s message to %s", qm.message.verb, poolReference.endPoint());
+                String message = String.format("Sending %s message to %s message size %d bytes", qm.message.verb,
+                                               poolReference.endPoint(),
+                                               qm.message.serializedSize(targetVersion) + PROTOCOL_MAGIC_ID_TIMESTAMP_SIZE);
                 // session may have already finished; see CASSANDRA-5668
                 if (state == null)
                 {
@@ -335,12 +341,9 @@ public class OutboundTcpConnection extends FastThreadLocalThread
 
     private void writeInternal(MessageOut message, int id, long timestamp) throws IOException
     {
+        //If you add/remove fields before the message don't forget to update PROTOCOL_MAGIC_ID_TIMESTAMP_SIZE
         out.writeInt(MessagingService.PROTOCOL_MAGIC);
-
-        if (targetVersion < MessagingService.VERSION_20)
-            out.writeUTF(String.valueOf(id));
-        else
-            out.writeInt(id);
+        out.writeInt(id);
 
         // int cast cuts off the high-order half of the timestamp, which we can assume remains
         // the same between now and when the recipient reconstructs it.
@@ -427,9 +430,7 @@ public class OutboundTcpConnection extends FastThreadLocalThread
                 int maxTargetVersion = handshakeVersion(in);
                 if (maxTargetVersion == NO_VERSION)
                 {
-                    // no version is returned, so disconnect an try again: we will either get
-                    // a different target version (targetVersion < MessagingService.VERSION_12)
-                    // or if the same version the handshake will finally succeed
+                    // no version is returned, so disconnect an try again
                     logger.trace("Target max version is {}; no version information yet, will retry", maxTargetVersion);
                     if (DatabaseDescriptor.getSeeds().contains(poolReference.endPoint()))
                         logger.warn("Seed gossip version is {}; will not connect with that version", maxTargetVersion);
@@ -461,22 +462,15 @@ public class OutboundTcpConnection extends FastThreadLocalThread
                 {
                     out.flush();
                     logger.trace("Upgrading OutputStream to {} to be compressed", poolReference.endPoint());
-                    if (targetVersion < MessagingService.VERSION_21)
-                    {
-                        // Snappy is buffered, so no need for extra buffering output stream
-                        out = new WrappedDataOutputStreamPlus(new SnappyOutputStream(socket.getOutputStream()));
-                    }
-                    else
-                    {
-                        // TODO: custom LZ4 OS that supports BB write methods
-                        LZ4Compressor compressor = LZ4Factory.fastestInstance().fastCompressor();
-                        Checksum checksum = XXHashFactory.fastestInstance().newStreamingHash32(LZ4_HASH_SEED).asChecksum();
-                        out = new WrappedDataOutputStreamPlus(new LZ4BlockOutputStream(socket.getOutputStream(),
-                                                                            1 << 14,  // 16k block size
-                                                                            compressor,
-                                                                            checksum,
-                                                                            true)); // no async flushing
-                    }
+
+                    // TODO: custom LZ4 OS that supports BB write methods
+                    LZ4Compressor compressor = LZ4Factory.fastestInstance().fastCompressor();
+                    Checksum checksum = XXHashFactory.fastestInstance().newStreamingHash32(LZ4_HASH_SEED).asChecksum();
+                    out = new WrappedDataOutputStreamPlus(new LZ4BlockOutputStream(socket.getOutputStream(),
+                                                                        1 << 14,  // 16k block size
+                                                                        compressor,
+                                                                        checksum,
+                                                                        true)); // no async flushing
                 }
                 logger.debug("Done connecting to {}", poolReference.endPoint());
                 return true;
@@ -502,31 +496,27 @@ public class OutboundTcpConnection extends FastThreadLocalThread
     {
         final AtomicInteger version = new AtomicInteger(NO_VERSION);
         final CountDownLatch versionLatch = new CountDownLatch(1);
-        new Thread("HANDSHAKE-" + poolReference.endPoint())
+        NamedThreadFactory.createThread(() ->
         {
-            @Override
-            public void run()
+            try
             {
-                try
-                {
-                    logger.info("Handshaking version with {}", poolReference.endPoint());
-                    version.set(inputStream.readInt());
-                }
-                catch (IOException ex)
-                {
-                    final String msg = "Cannot handshake version with " + poolReference.endPoint();
-                    if (logger.isTraceEnabled())
-                        logger.trace(msg, ex);
-                    else
-                        logger.info(msg);
-                }
-                finally
-                {
-                    //unblock the waiting thread on either success or fail
-                    versionLatch.countDown();
-                }
+                logger.info("Handshaking version with {}", poolReference.endPoint());
+                version.set(inputStream.readInt());
             }
-        }.start();
+            catch (IOException ex)
+            {
+                final String msg = "Cannot handshake version with " + poolReference.endPoint();
+                if (logger.isTraceEnabled())
+                    logger.trace(msg, ex);
+                else
+                    logger.info(msg);
+            }
+            finally
+            {
+                //unblock the waiting thread on either success or fail
+                versionLatch.countDown();
+            }
+        }, "HANDSHAKE-" + poolReference.endPoint()).start();
 
         try
         {

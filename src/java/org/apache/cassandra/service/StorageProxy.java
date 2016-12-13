@@ -42,7 +42,6 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.batchlog.Batch;
 import org.apache.cassandra.batchlog.BatchlogManager;
-import org.apache.cassandra.batchlog.LegacyBatchlogMigrator;
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.CFMetaData;
@@ -99,12 +98,12 @@ public class StorageProxy implements StorageProxyMBean
     };
     private static final ClientRequestMetrics readMetrics = new ClientRequestMetrics("Read");
     private static final ClientRequestMetrics rangeMetrics = new ClientRequestMetrics("RangeSlice");
-    private static final ClientRequestMetrics writeMetrics = new ClientRequestMetrics("Write");
-    private static final CASClientRequestMetrics casWriteMetrics = new CASClientRequestMetrics("CASWrite");
+    private static final ClientWriteRequestMetrics writeMetrics = new ClientWriteRequestMetrics("Write");
+    private static final CASClientWriteRequestMetrics casWriteMetrics = new CASClientWriteRequestMetrics("CASWrite");
     private static final CASClientRequestMetrics casReadMetrics = new CASClientRequestMetrics("CASRead");
     private static final ViewWriteMetrics viewWriteMetrics = new ViewWriteMetrics("ViewWrite");
     private static final Map<ConsistencyLevel, ClientRequestMetrics> readMetricsMap = new EnumMap<>(ConsistencyLevel.class);
-    private static final Map<ConsistencyLevel, ClientRequestMetrics> writeMetricsMap = new EnumMap<>(ConsistencyLevel.class);
+    private static final Map<ConsistencyLevel, ClientWriteRequestMetrics> writeMetricsMap = new EnumMap<>(ConsistencyLevel.class);
 
     private static final double CONCURRENT_SUBREQUESTS_MARGIN = 0.10;
 
@@ -175,7 +174,7 @@ public class StorageProxy implements StorageProxyMBean
         for(ConsistencyLevel level : ConsistencyLevel.values())
         {
             readMetricsMap.put(level, new ClientRequestMetrics("Read-" + level.name()));
-            writeMetricsMap.put(level, new ClientRequestMetrics("Write-" + level.name()));
+            writeMetricsMap.put(level, new ClientWriteRequestMetrics("Write-" + level.name()));
         }
     }
 
@@ -272,6 +271,10 @@ public class StorageProxy implements StorageProxyMBean
                 // finish the paxos round w/ the desired updates
                 // TODO turn null updates into delete?
                 PartitionUpdate updates = request.makeUpdates(current);
+
+                long size = updates.dataSize();
+                casWriteMetrics.mutationSize.update(size);
+                writeMetricsMap.get(consistencyForPaxos).mutationSize.update(size);
 
                 // Apply triggers to cas updates. A consideration here is that
                 // triggers emit Mutations, and so a given trigger implementation
@@ -859,6 +862,10 @@ public class StorageProxy implements StorageProxyMBean
                               .viewManager
                               .updatesAffectView(mutations, true);
 
+        long size = IMutation.dataSize(mutations);
+        writeMetrics.mutationSize.update(size);
+        writeMetricsMap.get(consistencyLevel).mutationSize.update(size);
+
         if (augmented != null)
             mutateAtomically(augmented, consistencyLevel, updatesView, queryStartNanoTime);
         else
@@ -909,10 +916,10 @@ public class StorageProxy implements StorageProxyMBean
                     batchConsistencyLevel = consistency_level;
             }
 
-            final BatchlogEndpoints batchlogEndpoints = getBatchlogEndpoints(localDataCenter, batchConsistencyLevel);
+            final Collection<InetAddress> batchlogEndpoints = getBatchlogEndpoints(localDataCenter, batchConsistencyLevel);
             final UUID batchUUID = UUIDGen.getTimeUUID();
             BatchlogResponseHandler.BatchlogCleanup cleanup = new BatchlogResponseHandler.BatchlogCleanup(mutations.size(),
-                                                                                                          () -> asyncRemoveFromBatchlog(batchlogEndpoints, batchUUID, queryStartNanoTime));
+                                                                                                          () -> asyncRemoveFromBatchlog(batchlogEndpoints, batchUUID));
 
             // add a handler for each mutation - includes checking availability, but doesn't initiate any writes, yet
             for (Mutation mutation : mutations)
@@ -969,33 +976,19 @@ public class StorageProxy implements StorageProxyMBean
         return replica.equals(FBUtilities.getBroadcastAddress());
     }
 
-    private static void syncWriteToBatchlog(Collection<Mutation> mutations, BatchlogEndpoints endpoints, UUID uuid, long queryStartNanoTime)
+    private static void syncWriteToBatchlog(Collection<Mutation> mutations, Collection<InetAddress> endpoints, UUID uuid, long queryStartNanoTime)
     throws WriteTimeoutException, WriteFailureException
     {
-        WriteResponseHandler<?> handler = new WriteResponseHandler<>(endpoints.all,
+        WriteResponseHandler<?> handler = new WriteResponseHandler<>(endpoints,
                                                                      Collections.<InetAddress>emptyList(),
-                                                                     endpoints.all.size() == 1 ? ConsistencyLevel.ONE : ConsistencyLevel.TWO,
+                                                                     endpoints.size() == 1 ? ConsistencyLevel.ONE : ConsistencyLevel.TWO,
                                                                      Keyspace.open(SchemaConstants.SYSTEM_KEYSPACE_NAME),
                                                                      null,
                                                                      WriteType.BATCH_LOG,
                                                                      queryStartNanoTime);
 
         Batch batch = Batch.createLocal(uuid, FBUtilities.timestampMicros(), mutations);
-
-        if (!endpoints.current.isEmpty())
-            syncWriteToBatchlog(handler, batch, endpoints.current);
-
-        if (!endpoints.legacy.isEmpty())
-            LegacyBatchlogMigrator.syncWriteToBatchlog(handler, batch, endpoints.legacy);
-
-        handler.get();
-    }
-
-    private static void syncWriteToBatchlog(WriteResponseHandler<?> handler, Batch batch, Collection<InetAddress> endpoints)
-    throws WriteTimeoutException, WriteFailureException
-    {
         MessageOut<Batch> message = new MessageOut<>(MessagingService.Verb.BATCH_STORE, batch, Batch.serializer);
-
         for (InetAddress target : endpoints)
         {
             logger.trace("Sending batchlog store request {} to {} for {} mutations", batch.id, target, batch.size());
@@ -1005,15 +998,7 @@ public class StorageProxy implements StorageProxyMBean
             else
                 MessagingService.instance().sendRR(message, target, handler);
         }
-    }
-
-    private static void asyncRemoveFromBatchlog(BatchlogEndpoints endpoints, UUID uuid, long queryStartNanoTime)
-    {
-        if (!endpoints.current.isEmpty())
-            asyncRemoveFromBatchlog(endpoints.current, uuid);
-
-        if (!endpoints.legacy.isEmpty())
-            LegacyBatchlogMigrator.asyncRemoveFromBatchlog(endpoints.legacy, uuid, queryStartNanoTime);
+        handler.get();
     }
 
     private static void asyncRemoveFromBatchlog(Collection<InetAddress> endpoints, UUID uuid)
@@ -1160,38 +1145,13 @@ public class StorageProxy implements StorageProxyMBean
     }
 
     /*
-     * A class to filter batchlog endpoints into legacy endpoints (version < 3.0) or not.
-     */
-    private static final class BatchlogEndpoints
-    {
-        public final Collection<InetAddress> all;
-        public final Collection<InetAddress> current;
-        public final Collection<InetAddress> legacy;
-
-        BatchlogEndpoints(Collection<InetAddress> endpoints)
-        {
-            all = endpoints;
-            current = new ArrayList<>(2);
-            legacy = new ArrayList<>(2);
-
-            for (InetAddress ep : endpoints)
-            {
-                if (MessagingService.instance().getVersion(ep) >= MessagingService.VERSION_30)
-                    current.add(ep);
-                else
-                    legacy.add(ep);
-            }
-        }
-    }
-
-    /*
      * Replicas are picked manually:
      * - replicas should be alive according to the failure detector
      * - replicas should be in the local datacenter
      * - choose min(2, number of qualifying candiates above)
      * - allow the local node to be the only replica only if it's a single-node DC
      */
-    private static BatchlogEndpoints getBatchlogEndpoints(String localDataCenter, ConsistencyLevel consistencyLevel)
+    private static Collection<InetAddress> getBatchlogEndpoints(String localDataCenter, ConsistencyLevel consistencyLevel)
     throws UnavailableException
     {
         TokenMetadata.Topology topology = StorageService.instance.getTokenMetadata().cachedOnlyTokenMap().getTopology();
@@ -1202,12 +1162,12 @@ public class StorageProxy implements StorageProxyMBean
         if (chosenEndpoints.isEmpty())
         {
             if (consistencyLevel == ConsistencyLevel.ANY)
-                return new BatchlogEndpoints(Collections.singleton(FBUtilities.getBroadcastAddress()));
+                return Collections.singleton(FBUtilities.getBroadcastAddress());
 
             throw new UnavailableException(ConsistencyLevel.ONE, 1, 0);
         }
 
-        return new BatchlogEndpoints(chosenEndpoints);
+        return chosenEndpoints;
     }
 
     /**
@@ -1816,9 +1776,8 @@ public class StorageProxy implements StorageProxyMBean
 
                 for (InetAddress endpoint : executor.getContactedReplicas())
                 {
-                    MessageOut<ReadCommand> message = command.createMessage(MessagingService.instance().getVersion(endpoint));
                     Tracing.trace("Enqueuing full data read to {}", endpoint);
-                    MessagingService.instance().sendRRWithFailure(message, endpoint, repairHandler);
+                    MessagingService.instance().sendRRWithFailure(command.createMessage(), endpoint, repairHandler);
                 }
             }
         }
@@ -1937,9 +1896,10 @@ public class StorageProxy implements StorageProxyMBean
     }
 
     /**
-     * Estimate the number of result rows (either cql3 rows or "thrift" rows, as called for by the command) per
-     * range in the ring based on our local data.  This assumes that ranges are uniformly distributed across the cluster
-     * and that the queried data is also uniformly distributed.
+     * Estimate the number of result rows per range in the ring based on our local data.
+     * <p>
+     * This assumes that ranges are uniformly distributed across the cluster and
+     * that the queried data is also uniformly distributed.
      */
     private static float estimateResultsPerRange(PartitionRangeReadCommand command, Keyspace keyspace)
     {
@@ -2218,9 +2178,8 @@ public class StorageProxy implements StorageProxyMBean
             {
                 for (InetAddress endpoint : toQuery.filteredEndpoints)
                 {
-                    MessageOut<ReadCommand> message = rangeCommand.createMessage(MessagingService.instance().getVersion(endpoint));
                     Tracing.trace("Enqueuing request to {}", endpoint);
-                    MessagingService.instance().sendRRWithFailure(message, endpoint, handler);
+                    MessagingService.instance().sendRRWithFailure(rangeCommand.createMessage(), endpoint, handler);
                 }
             }
 

@@ -279,10 +279,6 @@ public class Memtable implements Comparable<Memtable>
                 allocator.onHeap().allocate(overhead, opGroup);
                 initialSize = 8;
             }
-            else
-            {
-                allocator.reclaimer().reclaimImmediately(cloneKey);
-            }
         }
 
         long[] pair = previous.addAllWithSizeDelta(update, opGroup, indexer);
@@ -348,7 +344,7 @@ public class Memtable implements Comparable<Memtable>
                              100 * allocator.onHeap().ownershipRatio(), 100 * allocator.offHeap().ownershipRatio());
     }
 
-    public MemtableUnfilteredPartitionIterator makePartitionIterator(final ColumnFilter columnFilter, final DataRange dataRange, final boolean isForThrift)
+    public MemtableUnfilteredPartitionIterator makePartitionIterator(final ColumnFilter columnFilter, final DataRange dataRange)
     {
         AbstractBounds<PartitionPosition> keyRange = dataRange.keyRange();
 
@@ -374,7 +370,7 @@ public class Memtable implements Comparable<Memtable>
 
         final Iterator<Map.Entry<PartitionPosition, AtomicBTreePartition>> iter = subMap.entrySet().iterator();
 
-        return new MemtableUnfilteredPartitionIterator(cfs, iter, isForThrift, minLocalDeletionTime, columnFilter, dataRange);
+        return new MemtableUnfilteredPartitionIterator(cfs, iter, minLocalDeletionTime, columnFilter, dataRange);
     }
 
     private int findMinLocalDeletionTime(Iterator<Map.Entry<PartitionPosition, AtomicBTreePartition>> iterator)
@@ -449,9 +445,9 @@ public class Memtable implements Comparable<Memtable>
             this.isBatchLogTable = cfs.name.equals(SystemKeyspace.BATCHES) && cfs.keyspace.getName().equals(SchemaConstants.SYSTEM_KEYSPACE_NAME);
 
             if (flushLocation == null)
-                writer = createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getWriteableLocationAsFile(estimatedSize)), columnsCollector.get(), statsCollector.get());
+                writer = createFlushWriter(txn, cfs.newSSTableDescriptor(getDirectories().getWriteableLocationAsFile(estimatedSize)), columnsCollector.get(), statsCollector.get());
             else
-                writer = createFlushWriter(txn, cfs.getSSTablePath(getDirectories().getLocationForDisk(flushLocation)), columnsCollector.get(), statsCollector.get());
+                writer = createFlushWriter(txn, cfs.newSSTableDescriptor(getDirectories().getLocationForDisk(flushLocation)), columnsCollector.get(), statsCollector.get());
 
         }
 
@@ -503,14 +499,14 @@ public class Memtable implements Comparable<Memtable>
         }
 
         public SSTableMultiWriter createFlushWriter(LifecycleTransaction txn,
-                                                  String filename,
-                                                  PartitionColumns columns,
-                                                  EncodingStats stats)
+                                                    Descriptor descriptor,
+                                                    PartitionColumns columns,
+                                                    EncodingStats stats)
         {
             MetadataCollector sstableMetadataCollector = new MetadataCollector(cfs.metadata.comparator)
                     .commitLogIntervals(new IntervalSet<>(commitLogLowerBound.get(), commitLogUpperBound.get()));
 
-            return cfs.createSSTableMultiWriter(Descriptor.fromFilename(filename),
+            return cfs.createSSTableMultiWriter(descriptor,
                                                 toFlush.size(),
                                                 ActiveRepairService.UNREPAIRED_SSTABLE,
                                                 sstableMetadataCollector,
@@ -550,24 +546,17 @@ public class Memtable implements Comparable<Memtable>
     {
         private final ColumnFamilyStore cfs;
         private final Iterator<Map.Entry<PartitionPosition, AtomicBTreePartition>> iter;
-        private final boolean isForThrift;
         private final int minLocalDeletionTime;
         private final ColumnFilter columnFilter;
         private final DataRange dataRange;
 
-        public MemtableUnfilteredPartitionIterator(ColumnFamilyStore cfs, Iterator<Map.Entry<PartitionPosition, AtomicBTreePartition>> iter, boolean isForThrift, int minLocalDeletionTime, ColumnFilter columnFilter, DataRange dataRange)
+        public MemtableUnfilteredPartitionIterator(ColumnFamilyStore cfs, Iterator<Map.Entry<PartitionPosition, AtomicBTreePartition>> iter, int minLocalDeletionTime, ColumnFilter columnFilter, DataRange dataRange)
         {
             this.cfs = cfs;
             this.iter = iter;
-            this.isForThrift = isForThrift;
             this.minLocalDeletionTime = minLocalDeletionTime;
             this.columnFilter = columnFilter;
             this.dataRange = dataRange;
-        }
-
-        public boolean isForThrift()
-        {
-            return isForThrift;
         }
 
         public int getMinLocalDeletionTime()

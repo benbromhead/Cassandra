@@ -35,6 +35,7 @@ import com.datastax.driver.core.Statement;
 import com.datastax.driver.core.TableMetadata;
 import com.datastax.driver.core.Token;
 import com.datastax.driver.core.TokenRange;
+import io.netty.util.concurrent.FastThreadLocal;
 import org.apache.cassandra.stress.Operation;
 import org.apache.cassandra.stress.StressYaml;
 import org.apache.cassandra.stress.WorkManager;
@@ -42,11 +43,10 @@ import org.apache.cassandra.stress.generate.TokenRangeIterator;
 import org.apache.cassandra.stress.report.Timer;
 import org.apache.cassandra.stress.settings.StressSettings;
 import org.apache.cassandra.stress.util.JavaDriverClient;
-import org.apache.cassandra.stress.util.ThriftClient;
 
 public class TokenRangeQuery extends Operation
 {
-    private final ThreadLocal<State> currentState = new ThreadLocal<>();
+    private final FastThreadLocal<State> currentState = new FastThreadLocal<>();
 
     private final TableMetadata tableMetadata;
     private final TokenRangeIterator tokenRangeIterator;
@@ -218,32 +218,10 @@ public class TokenRangeQuery extends Operation
         return ret.toString();
     }
 
-    private static class ThriftRun extends Runner
-    {
-        final ThriftClient client;
-
-        private ThriftRun(ThriftClient client)
-        {
-            this.client = client;
-        }
-
-        public boolean run() throws Exception
-        {
-            throw new OperationNotSupportedException("Bulk read over thrift not supported");
-        }
-    }
-
-
     @Override
     public void run(JavaDriverClient client) throws IOException
     {
         timeWithRetry(new JavaDriverRun(client));
-    }
-
-    @Override
-    public void run(ThriftClient client) throws IOException
-    {
-        timeWithRetry(new ThriftRun(client));
     }
 
     public int ready(WorkManager workManager)

@@ -978,21 +978,6 @@ public class NodeProbe implements AutoCloseable
         return ssProxy.isGossipRunning();
     }
 
-    public void stopThriftServer()
-    {
-        ssProxy.stopRPCServer();
-    }
-
-    public void startThriftServer()
-    {
-        ssProxy.startRPCServer();
-    }
-
-    public boolean isThriftServerRunning()
-    {
-        return ssProxy.isRPCServerRunning();
-    }
-
     public void stopCassandraDaemon()
     {
         ssProxy.stopDaemon();
@@ -1347,6 +1332,20 @@ public class NodeProbe implements AutoCloseable
             return JMX.newMBeanProxy(mbeanServerConn,
                     new ObjectName("org.apache.cassandra.metrics:type=ClientRequest,scope=" + scope + ",name=Latency"),
                     CassandraMetricsRegistry.JmxTimerMBean.class);
+        }
+        catch (MalformedObjectNameException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public CassandraMetricsRegistry.JmxTimerMBean getMessagingQueueWaitMetrics(String verb)
+    {
+        try
+        {
+            return JMX.newMBeanProxy(mbeanServerConn,
+                                     new ObjectName("org.apache.cassandra.metrics:name=" + verb + "-WaitLatency,type=Messaging"),
+                                     CassandraMetricsRegistry.JmxTimerMBean.class);
         }
         catch (MalformedObjectNameException e)
         {

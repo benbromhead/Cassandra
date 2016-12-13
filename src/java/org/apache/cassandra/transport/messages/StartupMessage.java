@@ -19,7 +19,6 @@ package org.apache.cassandra.transport.messages;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
 
@@ -101,8 +100,7 @@ public class StartupMessage extends Message.Request
 
         if (DatabaseDescriptor.getAuthenticator().requireAuthentication())
         {
-            // Support old clients (send through the auth class name, new clients send through the SASL mechanism
-            if (new CassandraVersion(cqlVersion).compareTo(new CassandraVersion("3.0.0")) <= 0)
+            if (new CassandraVersion(cqlVersion).major < 4)
                 return new AuthenticateMessage(DatabaseDescriptor.getAuthenticator().getClass().getName());
             else
                 return new AuthenticateMessage(String.join(",", DatabaseDescriptor.getAuthenticator().getSupportedSaslMechanisms()));

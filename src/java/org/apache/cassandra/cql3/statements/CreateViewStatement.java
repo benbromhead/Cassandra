@@ -43,7 +43,6 @@ import org.apache.cassandra.exceptions.UnauthorizedException;
 import org.apache.cassandra.schema.TableParams;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.MigrationManager;
-import org.apache.cassandra.thrift.ThriftValidation;
 import org.apache.cassandra.transport.Event;
 
 public class CreateViewStatement extends SchemaAlteringStatement
@@ -133,7 +132,7 @@ public class CreateViewStatement extends SchemaAlteringStatement
         if (!baseName.getKeyspace().equals(keyspace()))
             throw new InvalidRequestException("Cannot create a materialized view on a table in a separate keyspace");
 
-        CFMetaData cfm = ThriftValidation.validateColumnFamily(baseName.getKeyspace(), baseName.getColumnFamily());
+        CFMetaData cfm = Validation.validateColumnFamily(baseName.getKeyspace(), baseName.getColumnFamily());
 
         if (cfm.isCounter())
             throw new InvalidRequestException("Materialized views are not supported on counter tables");
@@ -272,12 +271,21 @@ public class CreateViewStatement extends SchemaAlteringStatement
         if (targetClusteringColumns.isEmpty())
             throw new InvalidRequestException("No columns are defined for Materialized View other than primary key");
 
+        TableParams params = properties.properties.asNewTableParams();
+
+        if (params.defaultTimeToLive > 0)
+        {
+            throw new InvalidRequestException("Cannot set default_time_to_live for a materialized view. " +
+                                              "Data in a materialized view always expire at the same time than " +
+                                              "the corresponding data in the parent table.");
+        }
+
         CFMetaData.Builder cfmBuilder = CFMetaData.Builder.createView(keyspace(), columnFamily());
         add(cfm, targetPartitionKeys, cfmBuilder::addPartitionKey);
         add(cfm, targetClusteringColumns, cfmBuilder::addClusteringColumn);
         add(cfm, includedColumns, cfmBuilder::addRegularColumn);
         cfmBuilder.withId(properties.properties.getId());
-        TableParams params = properties.properties.asNewTableParams();
+
         CFMetaData viewCfm = cfmBuilder.build().params(params);
         ViewDefinition definition = new ViewDefinition(keyspace(),
                                                        columnFamily(),
