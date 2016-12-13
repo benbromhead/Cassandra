@@ -18,6 +18,7 @@
 package org.apache.cassandra.auth;
 
 import java.net.InetAddress;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -128,4 +129,6 @@ public interface IAuthenticator
          */
         public AuthenticatedUser getAuthenticatedUser() throws AuthenticationException;
     }
+
+    List<String> getSupportedSaslMechanisms();
 }

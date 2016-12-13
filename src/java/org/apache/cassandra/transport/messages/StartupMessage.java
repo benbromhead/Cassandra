@@ -19,6 +19,7 @@ package org.apache.cassandra.transport.messages;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
 
@@ -99,9 +100,16 @@ public class StartupMessage extends Message.Request
         }
 
         if (DatabaseDescriptor.getAuthenticator().requireAuthentication())
-            return new AuthenticateMessage(DatabaseDescriptor.getAuthenticator().getClass().getName());
-        else
+        {
+            // Support old clients (send through the auth class name, new clients send through the SASL mechanism
+            if (new CassandraVersion(cqlVersion).compareTo(new CassandraVersion("3.0.0")) <= 0)
+                return new AuthenticateMessage(DatabaseDescriptor.getAuthenticator().getClass().getName());
+            else
+                return new AuthenticateMessage(String.join(",", DatabaseDescriptor.getAuthenticator().getSupportedSaslMechanisms()));
+        }
+        else {
             return new ReadyMessage();
+        }
     }
 
     private static Map<String, String> upperCaseKeys(Map<String, String> options)

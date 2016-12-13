@@ -20,15 +20,18 @@ package org.apache.cassandra.auth;
 
 import java.io.IOException;
 import java.net.InetAddress;
-import java.security.Principal;
+import java.net.UnknownHostException;
 import java.util.Map;
 import java.util.Set;
 
+import javax.security.auth.login.AppConfigurationEntry;
+import javax.security.auth.login.Configuration;
 import javax.security.auth.login.LoginContext;
 import javax.security.auth.login.LoginException;
 import javax.security.auth.callback.*;
+import javax.security.sasl.RealmCallback;
 import javax.security.sasl.Sasl;
-import javax.security.sasl.SaslServer;
+import javax.security.sasl.SaslException;
 
 
 import com.google.common.collect.ImmutableSet;
@@ -45,26 +48,8 @@ public class JAASAuthenticator implements IAuthenticator
     public static final String USERNAME_KEY = "username";
     public static final String PASSWORD_KEY = "password";
     private static final String CONFIG_NAME = "Cassandra";
+    private String loginModuleName;
 //    private static final String CONFIG_NAME = System.getProperty("cassandra.auth.remote.login.config");
-
-
-
-    private AuthenticatedUser authenticate(String username, String password) throws AuthenticationException
-    {
-
-        LoginContext lc;
-        try
-        {
-            lc = new LoginContext(CONFIG_NAME, new AuthRequestCallbackHandler(username, password));
-            lc.login();
-        }
-        catch (LoginException e)
-        {
-            logger.info("", e);
-            throw new AuthenticationException(e.getMessage());
-        }
-        return new AuthenticatedUser(username);
-    }
 
 
     final static class AuthRequestCallbackHandler implements CallbackHandler
@@ -92,11 +77,22 @@ public class JAASAuthenticator implements IAuthenticator
                 {
                     ((PasswordCallback) callback).setPassword(password.toCharArray());
                 }
-                else
+                else if (callback instanceof RealmCallback) {
+                    ((RealmCallback) callback).setText(((RealmCallback) callback).getDefaultText());
+                } else
                 {
                     throw new UnsupportedCallbackException(callback);
                 }
             }
+        }
+    }
+
+    final static class NTLMCallbackHandler implements CallbackHandler
+    {
+
+        public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException
+        {
+
         }
     }
 
@@ -109,7 +105,6 @@ public class JAASAuthenticator implements IAuthenticator
     {
         // Also protected by CassandraRoleManager, but the duplication doesn't hurt and is more explicit
         return ImmutableSet.of(DataResource.table(SchemaConstants.AUTH_KEYSPACE_NAME, AuthKeyspace.ROLES));
-
     }
 
     public void validateConfiguration() throws ConfigurationException
@@ -119,12 +114,35 @@ public class JAASAuthenticator implements IAuthenticator
 
     public void setup()
     {
+        AppConfigurationEntry[] entries = Configuration.getConfiguration().getAppConfigurationEntry(CONFIG_NAME);
+        if(entries.length != 1)
+            throw new ConfigurationException("Multiple JAAS configurations found");
+
+        AppConfigurationEntry entry = entries[0];
+        loginModuleName = entry.getLoginModuleName();
 
     }
 
-    // TODO: Currently Cassandra clients only do no auth or username / password auth. May wish to explore x509
-    private class JaasPlainTextSaslAuthenticator extends PlainTextCqlSaslNegotiator
+    private static class JaasPlainTextSaslAuthenticator extends PlainTextCqlSaslNegotiator
     {
+        private LoginContext lc;
+
+        private AuthenticatedUser authenticate(String username, String password) throws AuthenticationException
+        {
+
+            try
+            {
+                lc = new LoginContext(CONFIG_NAME, new AuthRequestCallbackHandler(username, password));
+                lc.login();
+            }
+            catch (LoginException e)
+            {
+                logger.info("", e);
+                throw new AuthenticationException(e.getMessage());
+            }
+            return new AuthenticatedUser(username);
+        }
+
         public AuthenticatedUser getAuthenticatedUser() throws AuthenticationException
         {
             if (!complete)
@@ -135,20 +153,11 @@ public class JAASAuthenticator implements IAuthenticator
 
     public SaslNegotiator newSaslNegotiator(InetAddress clientAddress)
     {
-
         return new JaasPlainTextSaslAuthenticator();
     }
 
     public AuthenticatedUser legacyAuthenticate(Map<String, String> credentials) throws AuthenticationException
     {
-        String username = credentials.get(USERNAME_KEY);
-        if (username == null)
-            throw new AuthenticationException(String.format("Required key '%s' is missing", USERNAME_KEY));
-
-        String password = credentials.get(PASSWORD_KEY);
-        if (password == null)
-            throw new AuthenticationException(String.format("Required key '%s' is missing for provided username %s", PASSWORD_KEY, username));
-
-        return authenticate(username, password);
+        throw new AuthenticationException("Legacy authentication not supported with JAAS authentication");
     }
 }
