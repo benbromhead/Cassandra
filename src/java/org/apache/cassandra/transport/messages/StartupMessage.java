@@ -19,7 +19,6 @@ package org.apache.cassandra.transport.messages;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
 
