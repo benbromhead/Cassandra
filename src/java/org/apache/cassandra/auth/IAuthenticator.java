@@ -61,9 +61,23 @@ public interface IAuthenticator
      * @param clientAddress the IP address of the client whom we wish to authenticate, or null
      *                      if an internal client (one not connected over the remote transport).
      * @return org.apache.cassandra.auth.IAuthenticator.SaslNegotiator implementation
-     * (see {@link org.apache.cassandra.auth.PasswordAuthenticator.PlainTextSaslAuthenticator})
+     * (see {@link org.apache.cassandra.auth.PlainTextCqlSaslNegotiator})
      */
     SaslNegotiator newSaslNegotiator(InetAddress clientAddress);
+
+
+    /**
+     * Allows the Authenticator to handle legacy clients that don't support SASL negotiation and
+     * expect the class name of the authenticator from the SASL negotiator instead of a list of
+     * supported mechanisms.
+     *
+     * @param clientAddress the IP address of the client whom we wish to authenticate, or null
+     *                      if an internal client (one not connected over the remote transport).
+     * @return org.apache.cassandra.auth.IAuthenticator.SaslNegotiator implementation
+     * (see {@link org.apache.cassandra.auth.PlainTextCqlSaslNegotiator})
+     */
+    SaslNegotiator newLegacySaslNegotiator(InetAddress clientAddress);
+
 
     /**
      * A legacy method that is still used by JMX authentication.

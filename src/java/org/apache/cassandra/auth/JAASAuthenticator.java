@@ -21,6 +21,7 @@ package org.apache.cassandra.auth;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -35,6 +36,7 @@ import javax.security.sasl.SaslException;
 
 
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +50,7 @@ public class JAASAuthenticator implements IAuthenticator
     public static final String USERNAME_KEY = "username";
     public static final String PASSWORD_KEY = "password";
     private static final String CONFIG_NAME = "Cassandra";
+    private static final List<String> mechanisms = Lists.newArrayList("PLAIN");;
     private String loginModuleName;
 //    private static final String CONFIG_NAME = System.getProperty("cassandra.auth.remote.login.config");
 
@@ -87,15 +90,6 @@ public class JAASAuthenticator implements IAuthenticator
         }
     }
 
-    final static class NTLMCallbackHandler implements CallbackHandler
-    {
-
-        public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException
-        {
-
-        }
-    }
-
     public boolean requireAuthentication()
     {
         return true;
@@ -116,7 +110,7 @@ public class JAASAuthenticator implements IAuthenticator
     {
         AppConfigurationEntry[] entries = Configuration.getConfiguration().getAppConfigurationEntry(CONFIG_NAME);
         if(entries.length != 1)
-            throw new ConfigurationException("Multiple JAAS configurations found");
+            throw new ConfigurationException("Multiple JAAS modules found");
 
         AppConfigurationEntry entry = entries[0];
         loginModuleName = entry.getLoginModuleName();
@@ -129,7 +123,6 @@ public class JAASAuthenticator implements IAuthenticator
 
         private AuthenticatedUser authenticate(String username, String password) throws AuthenticationException
         {
-
             try
             {
                 lc = new LoginContext(CONFIG_NAME, new AuthRequestCallbackHandler(username, password));
@@ -156,8 +149,18 @@ public class JAASAuthenticator implements IAuthenticator
         return new JaasPlainTextSaslAuthenticator();
     }
 
+    public SaslNegotiator newLegacySaslNegotiator(InetAddress clientAddress) throws AuthenticationException
+    {
+        throw new AuthenticationException("JAAS");
+    }
+
     public AuthenticatedUser legacyAuthenticate(Map<String, String> credentials) throws AuthenticationException
     {
         throw new AuthenticationException("Legacy authentication not supported with JAAS authentication");
+    }
+
+    public List<String> getSupportedSaslMechanisms()
+    {
+        return mechanisms;
     }
 }

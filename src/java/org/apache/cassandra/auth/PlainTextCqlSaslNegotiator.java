@@ -20,13 +20,15 @@ package org.apache.cassandra.auth;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.List;
 
+import com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.exceptions.AuthenticationException;
 
-public abstract class PlainTextCqlSaslNegotiator implements IAuthenticator.SaslNegotiator
+public abstract class PlainTextCqlSaslNegotiator extends NegotiatingSaslNegotiator
 {
     private static final Logger logger = LoggerFactory.getLogger(PlainTextCqlSaslNegotiator.class);
     private static final byte NUL = 0;
@@ -34,18 +36,22 @@ public abstract class PlainTextCqlSaslNegotiator implements IAuthenticator.SaslN
     protected String username;
     protected String password;
 
-    public byte[] evaluateResponse(byte[] clientResponse) throws AuthenticationException
-    {
-        decodeCredentials(clientResponse);
-        complete = true;
-        return null;
-    }
-
     public boolean isComplete()
     {
         return complete;
     }
 
+    public List<String> getListOfAcceptableMechanisms()
+    {
+        return Lists.newArrayList("PLAIN");
+    }
+
+    public byte[] evaluateResponseAfterNegotiation(byte[] clientResponse)
+    {
+        decodeCredentials(clientResponse);
+        complete = true;
+        return null;
+    }
 
     /**
      * SASL PLAIN mechanism specifies that credentials are encoded in a

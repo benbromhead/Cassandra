@@ -112,8 +112,13 @@ public class ServerConnection extends Connection
 
     public IAuthenticator.SaslNegotiator getSaslNegotiator(QueryState queryState)
     {
-        if (saslNegotiator == null)
-            saslNegotiator = DatabaseDescriptor.getAuthenticator().newSaslNegotiator(queryState.getClientAddress());
+        if (saslNegotiator == null) {
+            if(getVersion().isSmallerThan(ProtocolVersion.V5))
+                saslNegotiator = DatabaseDescriptor.getAuthenticator().newLegacySaslNegotiator(queryState.getClientAddress());
+            else
+                saslNegotiator = DatabaseDescriptor.getAuthenticator().newSaslNegotiator(queryState.getClientAddress());
+
+        }
         return saslNegotiator;
     }
 }

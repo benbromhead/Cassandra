@@ -18,8 +18,6 @@
 package org.apache.cassandra.auth;
 
 import java.net.InetAddress;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -69,6 +67,7 @@ public class PasswordAuthenticator implements IAuthenticator
     // really this is a rolename now, but as it only matters for Thrift, we leave it for backwards compatibility
     public static final String USERNAME_KEY = "username";
     public static final String PASSWORD_KEY = "password";
+    public static final byte[] BYTES = new byte[0];
 
     private SelectStatement authenticateStatement;
 
@@ -213,22 +212,36 @@ public class PasswordAuthenticator implements IAuthenticator
 
     public SaslNegotiator newSaslNegotiator(InetAddress clientAddress)
     {
-        return new PlainTextSaslAuthenticator();
+        return new PlainTextCqlSaslNegotiator() {
+            public AuthenticatedUser getAuthenticatedUser() throws AuthenticationException
+            {
+                if (!complete)
+                    throw new AuthenticationException("SASL negotiation not complete");
+                return authenticate(username, password);
+            }
+        };
+    }
+
+    public SaslNegotiator newLegacySaslNegotiator(InetAddress clientAddress)
+    {
+        return new PlainTextCqlSaslNegotiator() {
+            public byte[] evaluateResponse(byte[] clientResponse) throws AuthenticationException
+            {
+                return evaluateResponseAfterNegotiation(clientResponse);
+            }
+
+            public AuthenticatedUser getAuthenticatedUser() throws AuthenticationException
+            {
+                if (!complete)
+                    throw new AuthenticationException("SASL negotiation not complete");
+                return authenticate(username, password);
+            }
+        };
     }
 
     private static SelectStatement prepare(String query)
     {
         return (SelectStatement) QueryProcessor.getStatement(query, ClientState.forInternalCalls()).statement;
-    }
-
-    private class PlainTextSaslAuthenticator extends PlainTextCqlSaslNegotiator
-    {
-        public AuthenticatedUser getAuthenticatedUser() throws AuthenticationException
-        {
-            if (!complete)
-                throw new AuthenticationException("SASL negotiation not complete");
-            return authenticate(username, password);
-        }
     }
 
     private static class CredentialsCache extends AuthCache<String, String> implements CredentialsCacheMBean

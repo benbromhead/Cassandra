@@ -18,34 +18,46 @@
 
 package org.apache.cassandra.auth;
 
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.cassandra.exceptions.AuthenticationException;
 
-public class NegotiatingSaslNegotiator implements IAuthenticator.SaslNegotiator
+public abstract class NegotiatingSaslNegotiator implements IAuthenticator.SaslNegotiator
 {
-    private final IAuthenticator.SaslNegotiator childNegotiator;
     private boolean negotiationComplete = false;
+    private static final Logger logger = LoggerFactory.getLogger(NegotiatingSaslNegotiator.class);
+    public String mechanism;
 
-    public NegotiatingSaslNegotiator(IAuthenticator.SaslNegotiator childNegotiator)
-    {
-        this.childNegotiator = childNegotiator;
-    }
 
     public byte[] evaluateResponse(byte[] clientResponse) throws AuthenticationException
     {
         if(!negotiationComplete) {
 
+            logger.trace("Negotiating SASL mechanism");
+            String candidateMechanism = new String(clientResponse, StandardCharsets.UTF_8);
+            if(!getListOfAcceptableMechanisms().contains(candidateMechanism))
+                throw new AuthenticationException("Chosen SASL mechanism is not supported");
+            mechanism = candidateMechanism;
+            logger.trace("Negotiated SASL mechanism: ", mechanism );
+            negotiationComplete = true;
+            setupOnCompletedNegotiation();
+            return "OK".getBytes();
         } else {
-            return childNegotiator.evaluateResponse(clientResponse);
+            return evaluateResponseAfterNegotiation(clientResponse);
         }
     }
 
-    public boolean isComplete()
-    {
-        return negotiationComplete && childNegotiator.isComplete();
+    public boolean isNegotiationComplete() {
+        return negotiationComplete;
     }
 
-    public AuthenticatedUser getAuthenticatedUser() throws AuthenticationException
-    {
-        return childNegotiator.getAuthenticatedUser();
-    }
+    public abstract byte[] evaluateResponseAfterNegotiation(byte[] clientResponse);
+
+    public abstract List<String> getListOfAcceptableMechanisms();
+
+    public void setupOnCompletedNegotiation() {}
 }
