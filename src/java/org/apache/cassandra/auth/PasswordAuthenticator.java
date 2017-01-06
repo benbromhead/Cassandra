@@ -18,6 +18,7 @@
 package org.apache.cassandra.auth;
 
 import java.net.InetAddress;
+import java.security.cert.Certificate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -210,7 +211,7 @@ public class PasswordAuthenticator implements IAuthenticator
         return supportedMechanisms;
     }
 
-    public SaslNegotiator newSaslNegotiator(InetAddress clientAddress)
+    public SaslNegotiator newSaslNegotiator(InetAddress clientAddress, Certificate[] certificates)
     {
         return new PlainTextCqlSaslNegotiator() {
             public AuthenticatedUser getAuthenticatedUser() throws AuthenticationException
