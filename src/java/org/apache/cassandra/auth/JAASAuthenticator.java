@@ -18,9 +18,8 @@
 
 package org.apache.cassandra.auth;
 
-import java.io.IOException;
 import java.net.InetAddress;
-import java.net.UnknownHostException;
+import java.security.cert.Certificate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -31,8 +30,6 @@ import javax.security.auth.login.LoginContext;
 import javax.security.auth.login.LoginException;
 import javax.security.auth.callback.*;
 import javax.security.sasl.RealmCallback;
-import javax.security.sasl.Sasl;
-import javax.security.sasl.SaslException;
 
 
 import com.google.common.collect.ImmutableSet;
@@ -144,7 +141,7 @@ public class JAASAuthenticator implements IAuthenticator
         }
     }
 
-    public SaslNegotiator newSaslNegotiator(InetAddress clientAddress)
+    public SaslNegotiator newSaslNegotiator(InetAddress clientAddress, Certificate[] certificates)
     {
         return new JaasPlainTextSaslAuthenticator();
     }
