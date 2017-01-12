@@ -57,6 +57,11 @@ public class AllowAllAuthenticator implements IAuthenticator
         return AUTHENTICATOR_INSTANCE;
     }
 
+    public SaslNegotiator newLegacySaslNegotiator(InetAddress clientAddress)
+    {
+        return AUTHENTICATOR_INSTANCE;
+    }
+
     public AuthenticatedUser legacyAuthenticate(Map<String, String> credentialsData)
     {
         return AuthenticatedUser.ANONYMOUS_USER;
