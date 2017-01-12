@@ -78,6 +78,8 @@ public class Mutation implements IMutation
         this.keyspaceName = keyspaceName;
         this.key = key;
         this.modifications = modifications;
+        for (PartitionUpdate pu : modifications.values())
+            cdcEnabled |= pu.metadata().params.cdc;
     }
 
     public Mutation copy()
@@ -92,6 +94,11 @@ public class Mutation implements IMutation
 
         Mutation copy = copy();
         copy.modifications.keySet().removeAll(cfIds);
+
+        copy.cdcEnabled = false;
+        for (PartitionUpdate pu : modifications.values())
+            copy.cdcEnabled |= pu.metadata().params.cdc;
+
         return copy;
     }
 
@@ -212,20 +219,17 @@ public class Mutation implements IMutation
     public CompletableFuture<?> applyFuture()
     {
         Keyspace ks = Keyspace.open(keyspaceName);
-        return ks.apply(this, Keyspace.open(keyspaceName).getMetadata().params.durableWrites);
+        return ks.applyFuture(this, Keyspace.open(keyspaceName).getMetadata().params.durableWrites, true);
+    }
+
+    public void apply(boolean durableWrites, boolean isDroppable)
+    {
+        Keyspace.open(keyspaceName).apply(this, durableWrites, true, isDroppable);
     }
 
     public void apply(boolean durableWrites)
     {
-        try
-        {
-            Keyspace ks = Keyspace.open(keyspaceName);
-            Uninterruptibles.getUninterruptibly(ks.applyNotDeferrable(this, durableWrites));
-        }
-        catch (ExecutionException e)
-        {
-            throw Throwables.propagate(e.getCause());
-        }
+        apply(durableWrites, true);
     }
 
     /*

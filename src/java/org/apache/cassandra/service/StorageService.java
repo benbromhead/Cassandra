@@ -64,6 +64,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.config.SchemaConstants;
+import org.apache.cassandra.config.ViewDefinition;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.compaction.CompactionManager;
@@ -708,7 +709,12 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     private boolean shouldBootstrap()
     {
-        return DatabaseDescriptor.isAutoBootstrap() && !SystemKeyspace.bootstrapComplete() && !DatabaseDescriptor.getSeeds().contains(FBUtilities.getBroadcastAddress());
+        return DatabaseDescriptor.isAutoBootstrap() && !SystemKeyspace.bootstrapComplete() && !isSeed();
+    }
+
+    public static boolean isSeed()
+    {
+        return DatabaseDescriptor.getSeeds().contains(FBUtilities.getBroadcastAddress());
     }
 
     private void prepareToJoin() throws ConfigurationException
@@ -791,6 +797,29 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
     }
 
+    public void waitForSchema(int delay)
+    {
+        // first sleep the delay to make sure we see all our peers
+        for (int i = 0; i < delay; i += 1000)
+        {
+            // if we see schema, we can proceed to the next check directly
+            if (!Schema.instance.getVersion().equals(SchemaConstants.emptyVersion))
+            {
+                logger.debug("got schema: {}", Schema.instance.getVersion());
+                break;
+            }
+            Uninterruptibles.sleepUninterruptibly(1, TimeUnit.SECONDS);
+        }
+        // if our schema hasn't matched yet, wait until it has
+        // we do this by waiting for all in-flight migration requests and responses to complete
+        // (post CASSANDRA-1391 we don't expect this to be necessary very often, but it doesn't hurt to be careful)
+        if (!MigrationManager.isReadyForBootstrap())
+        {
+            setMode(Mode.JOINING, "waiting for schema information to complete", true);
+            MigrationManager.waitUntilReadyForBootstrap();
+        }
+    }
+
     private void joinTokenRing(int delay) throws ConfigurationException
     {
         joined = true;
@@ -827,25 +856,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             else
                 SystemKeyspace.setBootstrapState(SystemKeyspace.BootstrapState.IN_PROGRESS);
             setMode(Mode.JOINING, "waiting for ring information", true);
-            // first sleep the delay to make sure we see all our peers
-            for (int i = 0; i < delay; i += 1000)
-            {
-                // if we see schema, we can proceed to the next check directly
-                if (!Schema.instance.getVersion().equals(SchemaConstants.emptyVersion))
-                {
-                    logger.debug("got schema: {}", Schema.instance.getVersion());
-                    break;
-                }
-                Uninterruptibles.sleepUninterruptibly(1, TimeUnit.SECONDS);
-            }
-            // if our schema hasn't matched yet, wait until it has
-            // we do this by waiting for all in-flight migration requests and responses to complete
-            // (post CASSANDRA-1391 we don't expect this to be necessary very often, but it doesn't hurt to be careful)
-            if (!MigrationManager.isReadyForBootstrap())
-            {
-                setMode(Mode.JOINING, "waiting for schema information to complete", true);
-                MigrationManager.waitUntilReadyForBootstrap();
-            }
+            waitForSchema(delay);
             setMode(Mode.JOINING, "schema complete, ready to bootstrap", true);
             setMode(Mode.JOINING, "waiting for pending range calculation", true);
             PendingRangeCalculatorService.instance.blockUntilFinished();
@@ -872,7 +883,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     throw new UnsupportedOperationException(s);
                 }
                 setMode(Mode.JOINING, "getting bootstrap token", true);
-                bootstrapTokens = BootStrapper.getBootstrapTokens(tokenMetadata, FBUtilities.getBroadcastAddress());
+                bootstrapTokens = BootStrapper.getBootstrapTokens(tokenMetadata, FBUtilities.getBroadcastAddress(), delay);
             }
             else
             {
@@ -928,22 +939,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             bootstrapTokens = SystemKeyspace.getSavedTokens();
             if (bootstrapTokens.isEmpty())
             {
-                Collection<String> initialTokens = DatabaseDescriptor.getInitialTokens();
-                if (initialTokens.size() < 1)
-                {
-                    bootstrapTokens = BootStrapper.getRandomTokens(tokenMetadata, DatabaseDescriptor.getNumTokens());
-                    if (DatabaseDescriptor.getNumTokens() == 1)
-                        logger.warn("Generated random token {}. Random tokens will result in an unbalanced ring; see http://wiki.apache.org/cassandra/Operations", bootstrapTokens);
-                    else
-                        logger.info("Generated random tokens. tokens are {}", bootstrapTokens);
-                }
-                else
-                {
-                    bootstrapTokens = new ArrayList<>(initialTokens.size());
-                    for (String token : initialTokens)
-                        bootstrapTokens.add(getTokenFactory().fromString(token));
-                    logger.info("Saved tokens not found. Using configuration value: {}", bootstrapTokens);
-                }
+                bootstrapTokens = BootStrapper.getBootstrapTokens(tokenMetadata, FBUtilities.getBroadcastAddress(), delay);
             }
             else
             {
@@ -1449,7 +1445,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             @Override
             public void onSuccess(StreamState streamState)
             {
-                isBootstrapMode = false;
+                bootstrapFinished();
                 logger.info("Bootstrap completed! for the tokens {}", tokens);
             }
 
@@ -1471,6 +1467,25 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
     }
 
+    /**
+     * All MVs have been created during bootstrap, so mark them as built
+     */
+    private void markViewsAsBuilt() {
+        for (String keyspace : Schema.instance.getUserKeyspaces())
+        {
+            for (ViewDefinition view: Schema.instance.getKSMetaData(keyspace).views)
+                SystemKeyspace.finishViewBuildStatus(view.ksName, view.viewName);
+        }
+    }
+
+    /**
+     * Called when bootstrap did finish successfully
+     */
+    private void bootstrapFinished() {
+        markViewsAsBuilt();
+        isBootstrapMode = false;
+    }
+
     public boolean resumeBootstrap()
     {
         if (isBootstrapMode && SystemKeyspace.bootstrapInProgress())
@@ -1488,7 +1503,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 @Override
                 public void onSuccess(StreamState streamState)
                 {
-                    isBootstrapMode = false;
+                    bootstrapFinished();
                     // start participating in the ring.
                     // pretend we are in survey mode so we can use joinRing() here
                     isSurveyMode = true;
@@ -3779,15 +3794,19 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         PendingRangeCalculatorService.instance.update();
     }
 
-    public void decommission() throws InterruptedException
+    public void decommission(boolean force) throws InterruptedException
     {
-        if (!tokenMetadata.isMember(FBUtilities.getBroadcastAddress()))
-            throw new UnsupportedOperationException("local node is not a member of the token ring yet");
-        if (tokenMetadata.cloneAfterAllLeft().sortedTokens().size() < 2)
-            throw new UnsupportedOperationException("no other normal nodes in the ring; decommission would be pointless");
-        if (operationMode != Mode.LEAVING && operationMode != Mode.NORMAL)
-            throw new UnsupportedOperationException("Node in " + operationMode + " state; wait for status to become normal or restart");
-        if (isDecommissioning.compareAndSet(true, true))
+        TokenMetadata metadata = tokenMetadata.cloneAfterAllLeft();
+        if (operationMode != Mode.LEAVING)
+        {
+            if (!tokenMetadata.isMember(FBUtilities.getBroadcastAddress()))
+                throw new UnsupportedOperationException("local node is not a member of the token ring yet");
+            if (metadata.getAllEndpoints().size() < 2)
+                    throw new UnsupportedOperationException("no other normal nodes in the ring; decommission would be pointless");
+            if (operationMode != Mode.NORMAL)
+                throw new UnsupportedOperationException("Node in " + operationMode + " state; wait for status to become normal or restart");
+        }
+        if (!isDecommissioning.compareAndSet(false, true))
             throw new IllegalStateException("Node is still decommissioning. Check nodetool netstats.");
 
         if (logger.isDebugEnabled())
@@ -3796,10 +3815,37 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         try
         {
             PendingRangeCalculatorService.instance.blockUntilFinished();
-            for (String keyspaceName : Schema.instance.getNonLocalStrategyKeyspaces())
+
+            String dc = DatabaseDescriptor.getEndpointSnitch().getDatacenter(FBUtilities.getBroadcastAddress());
+
+            if (operationMode != Mode.LEAVING) // If we're already decommissioning there is no point checking RF/pending ranges
             {
-                if (tokenMetadata.getPendingRanges(keyspaceName, FBUtilities.getBroadcastAddress()).size() > 0)
-                    throw new UnsupportedOperationException("data is currently moving to this node; unable to leave the ring");
+                int rf, numNodes;
+                for (String keyspaceName : Schema.instance.getNonLocalStrategyKeyspaces())
+                {
+                    if (!force)
+                    {
+                        Keyspace keyspace = Keyspace.open(keyspaceName);
+                        if (keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy)
+                        {
+                            NetworkTopologyStrategy strategy = (NetworkTopologyStrategy) keyspace.getReplicationStrategy();
+                            rf = strategy.getReplicationFactor(dc);
+                            numNodes = metadata.getTopology().getDatacenterEndpoints().get(dc).size();
+                        }
+                        else
+                        {
+                            numNodes = metadata.getAllEndpoints().size();
+                            rf = keyspace.getReplicationStrategy().getReplicationFactor();
+                        }
+
+                        if (numNodes <= rf)
+                            throw new UnsupportedOperationException("Not enough live nodes to maintain replication factor in keyspace "
+                                                                    + keyspaceName + " (RF = " + rf + ", N = " + numNodes + ")."
+                                                                    + " Perform a forceful decommission to ignore.");
+                    }
+                    if (tokenMetadata.getPendingRanges(keyspaceName, FBUtilities.getBroadcastAddress()).size() > 0)
+                        throw new UnsupportedOperationException("data is currently moving to this node; unable to leave the ring");
+                }
             }
 
             startLeaving();
