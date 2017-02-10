@@ -31,8 +31,8 @@ import org.slf4j.LoggerFactory;
 
 import com.ning.compress.lzf.LZFInputStream;
 
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.schema.TableId;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.io.sstable.SSTableMultiWriter;
@@ -42,14 +42,11 @@ import org.apache.cassandra.io.sstable.format.SSTableFormat;
 import org.apache.cassandra.io.sstable.format.Version;
 import org.apache.cassandra.io.util.RewindableDataInputStreamPlus;
 import org.apache.cassandra.io.util.DataInputPlus;
-import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.streaming.messages.FileMessageHeader;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.io.util.TrackedInputStream;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
-
-import static org.apache.cassandra.utils.Throwables.extractIOExceptionCause;
 
 /**
  * StreamReader reads from stream and writes to SSTable.
@@ -57,7 +54,7 @@ import static org.apache.cassandra.utils.Throwables.extractIOExceptionCause;
 public class StreamReader
 {
     private static final Logger logger = LoggerFactory.getLogger(StreamReader.class);
-    protected final UUID cfId;
+    protected final TableId tableId;
     protected final long estimatedKeys;
     protected final Collection<Pair<Long, Long>> sections;
     protected final StreamSession session;
@@ -71,7 +68,7 @@ public class StreamReader
     public StreamReader(FileMessageHeader header, StreamSession session)
     {
         this.session = session;
-        this.cfId = header.cfId;
+        this.tableId = header.tableId;
         this.estimatedKeys = header.estimatedKeys;
         this.sections = header.sections;
         this.inputVersion = header.version;
@@ -92,28 +89,23 @@ public class StreamReader
     {
         long totalSize = totalSize();
 
-        Pair<String, String> kscf = Schema.instance.getCF(cfId);
-        ColumnFamilyStore cfs = null;
-        if (kscf != null)
-            cfs = Keyspace.open(kscf.left).getColumnFamilyStore(kscf.right);
-
-        if (kscf == null || cfs == null)
+        ColumnFamilyStore cfs = ColumnFamilyStore.getIfExists(tableId);
+        if (cfs == null)
         {
             // schema was dropped during streaming
-            throw new IOException("CF " + cfId + " was dropped during streaming");
+            throw new IOException("CF " + tableId + " was dropped during streaming");
         }
 
-        logger.debug("[Stream #{}] Start receiving file #{} from {}, repairedAt = {}, size = {}, ks = '{}', table = '{}'.",
+        logger.debug("[Stream #{}] Start receiving file #{} from {}, repairedAt = {}, size = {}, ks = '{}', table = '{}', pendingRepair = '{}'.",
                      session.planId(), fileSeqNum, session.peer, repairedAt, totalSize, cfs.keyspace.getName(),
-                     cfs.getColumnFamilyName());
+                     cfs.getTableName(), session.getPendingRepair());
 
         TrackedInputStream in = new TrackedInputStream(new LZFInputStream(Channels.newInputStream(channel)));
-        StreamDeserializer deserializer = new StreamDeserializer(cfs.metadata, in, inputVersion, getHeader(cfs.metadata),
-                                                                 totalSize, session.planId());
+        StreamDeserializer deserializer = new StreamDeserializer(cfs.metadata(), in, inputVersion, getHeader(cfs.metadata()));
         SSTableMultiWriter writer = null;
         try
         {
-            writer = createWriter(cfs, totalSize, repairedAt, format);
+            writer = createWriter(cfs, totalSize, repairedAt, session.getPendingRepair(), format);
             while (in.getBytesRead() < totalSize)
             {
                 writePartition(deserializer, writer);
@@ -142,18 +134,18 @@ public class StreamReader
         }
     }
 
-    protected SerializationHeader getHeader(CFMetaData metadata)
+    protected SerializationHeader getHeader(TableMetadata metadata)
     {
         return header != null? header.toHeader(metadata) : null; //pre-3.0 sstable have no SerializationHeader
     }
 
-    protected SSTableMultiWriter createWriter(ColumnFamilyStore cfs, long totalSize, long repairedAt, SSTableFormat.Type format) throws IOException
+    protected SSTableMultiWriter createWriter(ColumnFamilyStore cfs, long totalSize, long repairedAt, UUID pendingRepair, SSTableFormat.Type format) throws IOException
     {
         Directories.DataDirectory localDir = cfs.getDirectories().getWriteableLocation(totalSize);
         if (localDir == null)
             throw new IOException(String.format("Insufficient disk space to store %s", FBUtilities.prettyPrintMemory(totalSize)));
 
-        RangeAwareSSTableWriter writer = new RangeAwareSSTableWriter(cfs, estimatedKeys, repairedAt, format, sstableLevel, totalSize, session.getTransaction(cfId), getHeader(cfs.metadata));
+        RangeAwareSSTableWriter writer = new RangeAwareSSTableWriter(cfs, estimatedKeys, repairedAt, pendingRepair, format, sstableLevel, totalSize, session.getTransaction(tableId), getHeader(cfs.metadata()));
         StreamHook.instance.reportIncomingFile(cfs, writer, session, fileSeqNum);
         return writer;
     }
@@ -181,7 +173,7 @@ public class StreamReader
         public static final String BUFFER_FILE_PREFIX = "buf";
         public static final String BUFFER_FILE_SUFFIX = "dat";
 
-        private final CFMetaData metadata;
+        private final TableMetadata metadata;
         private final DataInputPlus in;
         private final SerializationHeader header;
         private final SerializationHelper helper;
@@ -192,8 +184,7 @@ public class StreamReader
         private Row staticRow;
         private IOException exception;
 
-        public StreamDeserializer(CFMetaData metadata, InputStream in, Version version, SerializationHeader header,
-                                  long totalSize, UUID sessionId) throws IOException
+        public StreamDeserializer(TableMetadata metadata, InputStream in, Version version, SerializationHeader header) throws IOException
         {
             this.metadata = metadata;
             this.in = new DataInputPlus.DataInputStreamPlus(in);
@@ -203,22 +194,22 @@ public class StreamReader
 
         public StreamDeserializer newPartition() throws IOException
         {
-            key = metadata.decorateKey(ByteBufferUtil.readWithShortLength(in));
+            key = metadata.partitioner.decorateKey(ByteBufferUtil.readWithShortLength(in));
             partitionLevelDeletion = DeletionTime.serializer.deserialize(in);
             iterator = SSTableSimpleIterator.create(metadata, in, header, helper, partitionLevelDeletion);
             staticRow = iterator.readStaticRow();
             return this;
         }
 
-        public CFMetaData metadata()
+        public TableMetadata metadata()
         {
             return metadata;
         }
 
-        public PartitionColumns columns()
+        public RegularAndStaticColumns columns()
         {
             // We don't know which columns we'll get so assume it can be all of them
-            return metadata.partitionColumns();
+            return metadata.regularAndStaticColumns();
         }
 
         public boolean isReverseOrder()
@@ -306,23 +297,6 @@ public class StreamReader
                     logger.warn("Error while closing RewindableDataInputStreamPlus.", e);
                 }
             }
-        }
-
-        private static File getTempBufferFile(CFMetaData metadata, long totalSize, UUID sessionId) throws IOException
-        {
-            ColumnFamilyStore cfs = Keyspace.open(metadata.ksName).getColumnFamilyStore(metadata.cfName);
-            if (cfs == null)
-            {
-                // schema was dropped during streaming
-                throw new RuntimeException(String.format("CF %s.%s was dropped during streaming", metadata.ksName, metadata.cfName));
-            }
-
-            long maxSize = Math.min(MAX_SPILL_FILE_SIZE, totalSize);
-            File tmpDir = cfs.getDirectories().getTemporaryWriteableDirectoryAsFile(maxSize);
-            if (tmpDir == null)
-                throw new IOException(String.format("No sufficient disk space to stream legacy sstable from {}.{}. " +
-                                                         "Required disk space: %s.", FBUtilities.prettyPrintMemory(maxSize)));
-            return new File(tmpDir, String.format("%s-%s.%s", BUFFER_FILE_PREFIX, sessionId, BUFFER_FILE_SUFFIX));
         }
     }
 }

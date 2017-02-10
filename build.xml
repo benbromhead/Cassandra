@@ -415,7 +415,7 @@
           <dependency groupId="com.addthis.metrics" artifactId="reporter-config3" version="3.0.3" />
           <dependency groupId="org.mindrot" artifactId="jbcrypt" version="0.3m" />
           <dependency groupId="io.airlift" artifactId="airline" version="0.6" />
-          <dependency groupId="io.netty" artifactId="netty-all" version="4.0.39.Final" />
+          <dependency groupId="io.netty" artifactId="netty-all" version="4.0.44.Final" />
           <dependency groupId="com.google.code.findbugs" artifactId="jsr305" version="2.0.2" />
           <dependency groupId="com.clearspring.analytics" artifactId="stream" version="2.5.2" />
           <dependency groupId="com.datastax.cassandra" artifactId="cassandra-driver-core" version="3.0.1" classifier="shaded">
@@ -617,6 +617,7 @@
       <!-- retrieve artifacts -->
       <artifact:dependencies pomRefId="build-deps-pom"
                              filesetId="build-dependency-jars"
+      	                     sourcesFilesetId="build-dependency-sources-jars"
                              cacheDependencyRefs="true"
                              dependencyRefsBuildFile="${build.dir}/build-dependencies.xml">
           <remoteRepository refid="central"/>
@@ -1030,6 +1031,9 @@
           <fileset dir="${test.classes}"/>
       </jar>
   </target>
+
+    <!-- use https://github.com/krummas/jstackjunit to get thread dumps when unit tests time out -->
+  <taskdef name="junit" classname="org.krummas.junit.JStackJUnitTask" classpath="lib/jstackjunit-0.0.1.jar"/>
 
   <target name="build-test" depends="build" description="Compile test classes">
     <javac

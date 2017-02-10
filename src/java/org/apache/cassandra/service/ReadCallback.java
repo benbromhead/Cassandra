@@ -41,7 +41,6 @@ import org.apache.cassandra.exceptions.UnavailableException;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
 import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
-import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.tracing.TraceState;
@@ -77,9 +76,9 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
     {
         this(resolver,
              consistencyLevel,
-             consistencyLevel.blockFor(Keyspace.open(command.metadata().ksName)),
+             consistencyLevel.blockFor(Keyspace.open(command.metadata().keyspace)),
              command,
-             Keyspace.open(command.metadata().ksName),
+             Keyspace.open(command.metadata().keyspace),
              filteredEndpoints,
              queryStartNanoTime);
     }
@@ -227,10 +226,10 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
         {
             // If the resolver is a DigestResolver, we need to do a full data read if there is a mismatch.
             // Otherwise, resolve will send the repairs directly if needs be (and in that case we should never
-            // get a digest mismatch)
+            // get a digest mismatch).
             try
             {
-                resolver.resolve();
+                resolver.compareResponses();
             }
             catch (DigestMismatchException e)
             {

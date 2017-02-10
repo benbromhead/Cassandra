@@ -27,7 +27,7 @@ import com.google.common.util.concurrent.ListenableFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.dht.tokenallocator.TokenAllocation;
@@ -77,7 +77,8 @@ public class BootStrapper extends ProgressEventNotifierSupport
                                                    useStrictConsistency,
                                                    DatabaseDescriptor.getEndpointSnitch(),
                                                    stateStore,
-                                                   true);
+                                                   true,
+                                                   DatabaseDescriptor.getStreamingConnectionsPerHost());
         streamer.addSourceFilter(new RangeStreamer.FailureDetectorSourceFilter(FailureDetector.instance));
         streamer.addSourceFilter(new RangeStreamer.ExcludeLocalNodeFilter());
 
