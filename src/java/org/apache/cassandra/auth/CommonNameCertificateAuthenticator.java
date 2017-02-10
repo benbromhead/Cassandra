@@ -36,10 +36,12 @@ import com.google.common.collect.Lists;
  * CommonNameCertificateAuthenticator is an ICertificateAuthenticator
  * implementation that uses the common name (CN) field on certificates
  * presented by clients as their username.  This implementation requires
- * authentication; if the client fails to present a certificate,
+ * encryption; if the client fails to present a certificate,
  * then it will not be authenticated. Use {@link org.apache.cassandra.auth.AllowAllAuthenticator}
  * with client encryption and client validation for anonymous auth with a valid
  * cert.
+ *
+ * The name provided by the CN must be a valid Role provide by the IRoleManager.
  *
  * This implementation only accepts {@link java.security.cert.X509Certificate}
  * chains.
@@ -136,7 +138,7 @@ public class CommonNameCertificateAuthenticator implements IAuthenticator {
             {
                 user = authenticate(certificates);
                 isAuthComplete = true;
-                return "".getBytes();
+                return null;
             }
 
             public List<String> getListOfAcceptableMechanisms()

@@ -45,7 +45,14 @@ public abstract class NegotiatingSaslNegotiator implements IAuthenticator.SaslNe
             logger.trace("Negotiated SASL mechanism: ", mechanism );
             negotiationComplete = true;
             setupOnCompletedNegotiation();
-            return "OK".getBytes();
+
+            /*
+                Just accept the mechanism chosen by the client, the negotiator could be extended to
+                support choosing the most secure of a set of mechanisms, returning the mechanism name
+                ensures that the choice is explicit.
+             */
+
+            return clientResponse;
         } else {
             return evaluateResponseAfterNegotiation(clientResponse);
         }

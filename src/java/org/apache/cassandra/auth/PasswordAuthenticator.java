@@ -203,6 +203,7 @@ public class PasswordAuthenticator implements IAuthenticator
         return new PlainTextCqlSaslNegotiator() {
             public AuthenticatedUser getAuthenticatedUser() throws AuthenticationException
             {
+                logger.debug("Authenticating user with new auth mechanism");
                 if (!complete)
                     throw new AuthenticationException("SASL negotiation not complete");
                 return authenticate(username, password);
@@ -215,6 +216,7 @@ public class PasswordAuthenticator implements IAuthenticator
         return new PlainTextCqlSaslNegotiator() {
             public byte[] evaluateResponse(byte[] clientResponse) throws AuthenticationException
             {
+                logger.debug("Authenticating user with legacy auth mechanism");
                 return evaluateResponseAfterNegotiation(clientResponse);
             }
 
