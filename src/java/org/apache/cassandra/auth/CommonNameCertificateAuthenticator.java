@@ -46,16 +46,15 @@ import com.google.common.collect.Lists;
  * This implementation only accepts {@link java.security.cert.X509Certificate}
  * chains.
  */
-public class CommonNameCertificateAuthenticator implements IAuthenticator {
+public class CommonNameCertificateAuthenticator implements IAuthenticator
+{
     public static List<String> supportedMechanisms = Lists.newArrayList("EXTERNAL");
 
-    @Override
     public boolean requireAuthentication()
     {
         return true;
     }
 
-    @Override
     public AuthenticatedUser legacyAuthenticate(Map<String, String> credentials)
     {
         throw new UnsupportedOperationException();
@@ -66,16 +65,13 @@ public class CommonNameCertificateAuthenticator implements IAuthenticator {
         return supportedMechanisms;
     }
 
-    @Override
     public Set<? extends IResource> protectedResources()
     {
         return Collections.emptySet();
     }
 
-    @Override
     public void validateConfiguration() {}
 
-    @Override
     public void setup() {}
 
     public AuthenticatedUser authenticate(Certificate[] chain) throws AuthenticationException
@@ -114,7 +110,7 @@ public class CommonNameCertificateAuthenticator implements IAuthenticator {
         throw new AuthenticationException("Common name field required but not present in certificate subject");
     }
 
-    @Override
+
     public SaslNegotiator newSaslNegotiator(InetAddress clientAddress, Certificate[] certificates)
     {
         return new NegotiatingSaslNegotiator() {

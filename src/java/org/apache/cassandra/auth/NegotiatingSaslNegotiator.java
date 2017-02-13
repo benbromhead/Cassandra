@@ -36,13 +36,11 @@ public abstract class NegotiatingSaslNegotiator implements IAuthenticator.SaslNe
     public byte[] evaluateResponse(byte[] clientResponse) throws AuthenticationException
     {
         if(!negotiationComplete) {
-
-            logger.trace("Negotiating SASL mechanism");
             String candidateMechanism = new String(clientResponse, StandardCharsets.UTF_8);
             if(!getListOfAcceptableMechanisms().contains(candidateMechanism))
                 throw new AuthenticationException("Chosen SASL mechanism is not supported");
             mechanism = candidateMechanism;
-            logger.trace("Negotiated SASL mechanism: ", mechanism );
+            logger.debug("Negotiated SASL mechanism: ", mechanism );
             negotiationComplete = true;
             setupOnCompletedNegotiation();
 

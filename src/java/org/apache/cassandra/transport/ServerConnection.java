@@ -118,19 +118,20 @@ public class ServerConnection extends Connection
 
     public IAuthenticator.SaslNegotiator getSaslNegotiator(QueryState queryState)
     {
-        Certificate[] certificates = null;
-        try
-        {
-            SslHandler handler = (SslHandler)channel().pipeline().get("ssl");
-            certificates = handler.engine().getSession().getPeerCertificates();
-        }
-        catch (SSLPeerUnverifiedException |NullPointerException e)
-        {
-            if(DatabaseDescriptor.getClientEncryptionOptions().enabled && !DatabaseDescriptor.getClientEncryptionOptions().optional)
-                throw new AuthenticationException("Could not verify peer certificate");
-        }
-
         if (saslNegotiator == null) {
+            Certificate[] certificates = null;
+            if(DatabaseDescriptor.getClientEncryptionOptions().enabled && !DatabaseDescriptor.getClientEncryptionOptions().optional) {
+                try
+                {
+                    SslHandler handler = (SslHandler)channel().pipeline().get("ssl");
+                    certificates = handler.engine().getSession().getPeerCertificates();
+                }
+                catch (SSLPeerUnverifiedException |NullPointerException e)
+                {
+                    throw new AuthenticationException("Could not verify peer certificate");
+                }
+            }
+
             if(getVersion().isSmallerThan(ProtocolVersion.V5))
                 saslNegotiator = DatabaseDescriptor.getAuthenticator().newLegacySaslNegotiator(queryState.getClientAddress());
             else
