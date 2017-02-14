@@ -50,7 +50,7 @@ public abstract class NegotiatingSaslNegotiator implements IAuthenticator.SaslNe
                 ensures that the choice is explicit.
              */
 
-            return clientResponse;
+            return "".getBytes();
         } else {
             return evaluateResponseAfterNegotiation(clientResponse);
         }
