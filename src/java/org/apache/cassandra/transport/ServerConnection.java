@@ -17,12 +17,17 @@
  */
 package org.apache.cassandra.transport;
 
+import java.security.cert.Certificate;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import javax.net.ssl.SSLPeerUnverifiedException;
+
 import io.netty.channel.Channel;
+import io.netty.handler.ssl.SslHandler;
 import org.apache.cassandra.auth.IAuthenticator;
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.exceptions.AuthenticationException;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
 
@@ -110,10 +115,28 @@ public class ServerConnection extends Connection
         }
     }
 
+
     public IAuthenticator.SaslNegotiator getSaslNegotiator(QueryState queryState)
     {
-        if (saslNegotiator == null)
-            saslNegotiator = DatabaseDescriptor.getAuthenticator().newSaslNegotiator(queryState.getClientAddress());
+        if (saslNegotiator == null) {
+            Certificate[] certificates = null;
+            if(DatabaseDescriptor.getClientEncryptionOptions().enabled && !DatabaseDescriptor.getClientEncryptionOptions().optional) {
+                try
+                {
+                    SslHandler handler = (SslHandler)channel().pipeline().get("ssl");
+                    certificates = handler.engine().getSession().getPeerCertificates();
+                }
+                catch (SSLPeerUnverifiedException |NullPointerException e)
+                {
+                    throw new AuthenticationException("Could not verify peer certificate");
+                }
+            }
+
+            if(getVersion().isSmallerThan(ProtocolVersion.V5))
+                saslNegotiator = DatabaseDescriptor.getAuthenticator().newLegacySaslNegotiator(queryState.getClientAddress());
+            else
+                saslNegotiator = DatabaseDescriptor.getAuthenticator().newSaslNegotiator(queryState.getClientAddress(), certificates);
+        }
         return saslNegotiator;
     }
 }

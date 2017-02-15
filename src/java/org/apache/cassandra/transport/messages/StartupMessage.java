@@ -99,9 +99,15 @@ public class StartupMessage extends Message.Request
         }
 
         if (DatabaseDescriptor.getAuthenticator().requireAuthentication())
-            return new AuthenticateMessage(DatabaseDescriptor.getAuthenticator().getClass().getName());
-        else
+        {
+            if (new CassandraVersion(cqlVersion).major < 4)
+                return new AuthenticateMessage(DatabaseDescriptor.getAuthenticator().getClass().getName());
+            else
+                return new AuthenticateMessage(String.join(",", DatabaseDescriptor.getAuthenticator().getSupportedSaslMechanisms()));
+        }
+        else {
             return new ReadyMessage();
+        }
     }
 
     private static Map<String, String> upperCaseKeys(Map<String, String> options)

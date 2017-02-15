@@ -315,6 +315,11 @@ Table of Contents
   token contains (and when it can be null/empty, if ever) depends on the actual
   authenticator used.
 
+  AUTH_RESPONSE can be used to select the SASL mechanism to authenticate with
+  based on the initial AUTHENTICATE request and to perform the actual steps
+  required for the chosen SASL mechanism. Different authentication classes may
+  choose to implement this differently.
+
   The response to a AUTH_RESPONSE is either a follow-up AUTH_CHALLENGE message,
   an AUTH_SUCCESS message or an ERROR message.
 
@@ -522,8 +527,10 @@ Table of Contents
   This message will be sent following a STARTUP message if authentication is
   required and must be answered by a AUTH_RESPONSE message from the client.
 
-  The body consists of a single [string] indicating the full class name of the
-  IAuthenticator in use.
+  The body consists of a single [string] indicating the SASL Mechanisms
+  supported by the authentication class. Multiple mechanisms can be specified
+  as a comma seperated list. For example an AUTHENTICATE body of "PLAIN,GSSAPI"
+  means Cassandra will accept plaintext or Kerberos V5 SASL mechanisms.
 
 
 4.2.4. SUPPORTED

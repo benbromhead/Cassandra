@@ -18,6 +18,8 @@
 package org.apache.cassandra.auth;
 
 import java.net.InetAddress;
+import java.security.cert.Certificate;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -59,10 +61,26 @@ public interface IAuthenticator
      * attempt.
      * @param clientAddress the IP address of the client whom we wish to authenticate, or null
      *                      if an internal client (one not connected over the remote transport).
+     * @param certificates the verified client certificates from the connection associtted with the
+     *                     authentication request, or null if client encryption is not enabled
      * @return org.apache.cassandra.auth.IAuthenticator.SaslNegotiator implementation
-     * (see {@link org.apache.cassandra.auth.PasswordAuthenticator.PlainTextSaslAuthenticator})
+     * (see {@link org.apache.cassandra.auth.PlainTextCqlSaslNegotiator})
      */
-    SaslNegotiator newSaslNegotiator(InetAddress clientAddress);
+    SaslNegotiator newSaslNegotiator(InetAddress clientAddress, Certificate[] certificates);
+
+
+    /**
+     * Allows the Authenticator to handle legacy clients that don't support SASL negotiation and
+     * expect the class name of the authenticator from the SASL negotiator instead of a list of
+     * supported mechanisms.
+     *
+     * @param clientAddress the IP address of the client whom we wish to authenticate, or null
+     *                      if an internal client (one not connected over the remote transport).
+     * @return org.apache.cassandra.auth.IAuthenticator.SaslNegotiator implementation
+     * (see {@link org.apache.cassandra.auth.PlainTextCqlSaslNegotiator})
+     */
+    SaslNegotiator newLegacySaslNegotiator(InetAddress clientAddress);
+
 
     /**
      * A legacy method that is still used by JMX authentication.
@@ -126,4 +144,6 @@ public interface IAuthenticator
          */
         public AuthenticatedUser getAuthenticatedUser() throws AuthenticationException;
     }
+
+    List<String> getSupportedSaslMechanisms();
 }

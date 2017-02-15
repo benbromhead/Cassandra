@@ -18,9 +18,13 @@
 package org.apache.cassandra.auth;
 
 import java.net.InetAddress;
+import java.security.cert.Certificate;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import com.google.common.collect.Lists;
 
 import org.apache.cassandra.exceptions.AuthenticationException;
 import org.apache.cassandra.exceptions.ConfigurationException;
@@ -28,6 +32,7 @@ import org.apache.cassandra.exceptions.ConfigurationException;
 public class AllowAllAuthenticator implements IAuthenticator
 {
     private static final SaslNegotiator AUTHENTICATOR_INSTANCE = new Negotiator();
+    private static final List<String> supportedMechanisms = Lists.newArrayList();
 
     public boolean requireAuthentication()
     {
@@ -47,7 +52,12 @@ public class AllowAllAuthenticator implements IAuthenticator
     {
     }
 
-    public SaslNegotiator newSaslNegotiator(InetAddress clientAddress)
+    public SaslNegotiator newSaslNegotiator(InetAddress clientAddress, Certificate[] certificates)
+    {
+        return AUTHENTICATOR_INSTANCE;
+    }
+
+    public SaslNegotiator newLegacySaslNegotiator(InetAddress clientAddress)
     {
         return AUTHENTICATOR_INSTANCE;
     }
@@ -55,6 +65,11 @@ public class AllowAllAuthenticator implements IAuthenticator
     public AuthenticatedUser legacyAuthenticate(Map<String, String> credentialsData)
     {
         return AuthenticatedUser.ANONYMOUS_USER;
+    }
+
+    public List<String> getSupportedSaslMechanisms()
+    {
+        return supportedMechanisms;
     }
 
     private static class Negotiator implements SaslNegotiator
