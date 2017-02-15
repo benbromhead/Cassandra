@@ -133,9 +133,9 @@ public class ServerConnection extends Connection
             }
 
             if(getVersion().isSmallerThan(ProtocolVersion.V5))
-                saslNegotiator = DatabaseDescriptor.getAuthenticator().newLegacySaslNegotiator(queryState.getClientAddress());
+                saslNegotiator = DatabaseDescriptor.getAuthenticator().newSaslNegotiator(queryState.getClientAddress());
             else
-                saslNegotiator = DatabaseDescriptor.getAuthenticator().newSaslNegotiator(queryState.getClientAddress(), certificates);
+                saslNegotiator = DatabaseDescriptor.getAuthenticator().newV5SaslNegotiator(queryState.getClientAddress(), certificates);
         }
         return saslNegotiator;
     }

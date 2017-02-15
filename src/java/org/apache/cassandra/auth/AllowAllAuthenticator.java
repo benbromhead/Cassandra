@@ -52,12 +52,12 @@ public class AllowAllAuthenticator implements IAuthenticator
     {
     }
 
-    public SaslNegotiator newSaslNegotiator(InetAddress clientAddress, Certificate[] certificates)
+    public SaslNegotiator newV5SaslNegotiator(InetAddress clientAddress, Certificate[] certificates)
     {
         return AUTHENTICATOR_INSTANCE;
     }
 
-    public SaslNegotiator newLegacySaslNegotiator(InetAddress clientAddress)
+    public SaslNegotiator newSaslNegotiator(InetAddress clientAddress)
     {
         return AUTHENTICATOR_INSTANCE;
     }

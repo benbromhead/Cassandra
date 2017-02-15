@@ -67,7 +67,6 @@ public class PasswordAuthenticator implements IAuthenticator
     // really this is a rolename now, but as it only matters for Thrift, we leave it for backwards compatibility
     public static final String USERNAME_KEY = "username";
     public static final String PASSWORD_KEY = "password";
-    public static final byte[] BYTES = new byte[0];
 
     private SelectStatement authenticateStatement;
 
@@ -198,7 +197,7 @@ public class PasswordAuthenticator implements IAuthenticator
         return supportedMechanisms;
     }
 
-    public SaslNegotiator newSaslNegotiator(InetAddress clientAddress, Certificate[] certificates)
+    public SaslNegotiator newV5SaslNegotiator(InetAddress clientAddress, Certificate[] certificates)
     {
         return new PlainTextCqlSaslNegotiator() {
             public AuthenticatedUser getAuthenticatedUser() throws AuthenticationException
@@ -211,7 +210,7 @@ public class PasswordAuthenticator implements IAuthenticator
         };
     }
 
-    public SaslNegotiator newLegacySaslNegotiator(InetAddress clientAddress)
+    public SaslNegotiator newSaslNegotiator(InetAddress clientAddress)
     {
         return new PlainTextCqlSaslNegotiator() {
             public byte[] evaluateResponse(byte[] clientResponse) throws AuthenticationException

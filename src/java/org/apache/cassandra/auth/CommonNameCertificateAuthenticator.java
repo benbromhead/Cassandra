@@ -48,7 +48,7 @@ import com.google.common.collect.Lists;
  */
 public class CommonNameCertificateAuthenticator implements IAuthenticator
 {
-    public static List<String> supportedMechanisms = Lists.newArrayList("EXTERNAL");
+    private final static List<String> supportedMechanisms = Lists.newArrayList("EXTERNAL");
 
     public boolean requireAuthentication()
     {
@@ -111,7 +111,7 @@ public class CommonNameCertificateAuthenticator implements IAuthenticator
     }
 
 
-    public SaslNegotiator newSaslNegotiator(InetAddress clientAddress, Certificate[] certificates)
+    public SaslNegotiator newV5SaslNegotiator(InetAddress clientAddress, Certificate[] certificates)
     {
         return new NegotiatingSaslNegotiator() {
             private boolean isAuthComplete = false;
@@ -144,7 +144,7 @@ public class CommonNameCertificateAuthenticator implements IAuthenticator
         };
     }
 
-    public SaslNegotiator newLegacySaslNegotiator(InetAddress clientAddress)
+    public SaslNegotiator newSaslNegotiator(InetAddress clientAddress)
     {
         throw new AuthenticationException("Legacy authentication not supported with CommonNameCertificateAuthenticator, please use a cql v5 compatible client");
     }

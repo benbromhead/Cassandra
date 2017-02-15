@@ -66,7 +66,7 @@ public interface IAuthenticator
      * @return org.apache.cassandra.auth.IAuthenticator.SaslNegotiator implementation
      * (see {@link org.apache.cassandra.auth.PlainTextCqlSaslNegotiator})
      */
-    SaslNegotiator newSaslNegotiator(InetAddress clientAddress, Certificate[] certificates);
+    SaslNegotiator newV5SaslNegotiator(InetAddress clientAddress, Certificate[] certificates);
 
 
     /**
@@ -79,7 +79,7 @@ public interface IAuthenticator
      * @return org.apache.cassandra.auth.IAuthenticator.SaslNegotiator implementation
      * (see {@link org.apache.cassandra.auth.PlainTextCqlSaslNegotiator})
      */
-    SaslNegotiator newLegacySaslNegotiator(InetAddress clientAddress);
+    SaslNegotiator newSaslNegotiator(InetAddress clientAddress);
 
 
     /**
