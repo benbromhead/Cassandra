@@ -130,11 +130,23 @@ public class CommonNameCertificateAuthenticator implements IAuthenticator
                 return user;
             }
 
-            public byte[] evaluateResponseAfterNegotiation(byte[] clientResponse)
+
+            /**
+             * Will check the client response to ensure it chose the right mechanism, however we
+             * short circuit the rest of the negotiation and just return succes or failure based on
+             * the cert details we already have.
+             **/
+            public byte[] evaluateResponse(byte[] clientResponse)
             {
+                super.evaluateResponse(clientResponse);
                 user = authenticate(certificates);
                 isAuthComplete = true;
                 return null;
+            }
+
+            public byte[] evaluateResponseAfterNegotiation(byte[] clientResponse)
+            {
+                return new byte[0];
             }
 
             public List<String> getListOfAcceptableMechanisms()

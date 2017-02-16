@@ -33,8 +33,8 @@ public abstract class PlainTextCqlSaslNegotiator extends NegotiatingSaslNegotiat
     private static final Logger logger = LoggerFactory.getLogger(PlainTextCqlSaslNegotiator.class);
     private static final byte NUL = 0;
     protected boolean complete = false;
-    protected String username;
-    protected String password;
+    public String username;
+    public String password;
 
     public boolean isComplete()
     {
