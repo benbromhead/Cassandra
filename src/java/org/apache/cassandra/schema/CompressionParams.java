@@ -53,7 +53,8 @@ public final class CompressionParams
     private static volatile boolean hasLoggedChunkLengthWarning;
     private static volatile boolean hasLoggedCrcCheckChanceWarning;
 
-    public static final int DEFAULT_CHUNK_LENGTH = 65536;
+    // 4kb default chunk size optimized for SSDs
+    public static final int DEFAULT_CHUNK_LENGTH = 4096;
     public static final double DEFAULT_MIN_COMPRESS_RATIO = 1.1;
     public static final IVersionedSerializer<CompressionParams> serializer = new Serializer();
 
