@@ -126,7 +126,7 @@ public class ServerConnection extends Connection
                     SslHandler handler = (SslHandler)channel().pipeline().get("ssl");
                     certificates = handler.engine().getSession().getPeerCertificates();
                 }
-                catch (SSLPeerUnverifiedException |NullPointerException e)
+                catch (SSLPeerUnverifiedException | NullPointerException e)
                 {
                     throw new AuthenticationException("Could not verify peer certificate");
                 }

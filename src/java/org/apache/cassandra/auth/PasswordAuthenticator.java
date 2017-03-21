@@ -26,8 +26,6 @@ import java.util.concurrent.ExecutionException;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.schema.Schema;
@@ -58,7 +56,6 @@ import static org.apache.cassandra.auth.CassandraRoleManager.consistencyForRole;
  */
 public class PasswordAuthenticator implements IAuthenticator
 {
-    private static final Logger logger = LoggerFactory.getLogger(PasswordAuthenticator.class);
     private static final List<String> supportedMechanisms = Lists.newArrayList("PLAIN");
 
     // name of the hash column.
@@ -202,7 +199,6 @@ public class PasswordAuthenticator implements IAuthenticator
         return new PlainTextCqlSaslNegotiator() {
             public AuthenticatedUser getAuthenticatedUser() throws AuthenticationException
             {
-                logger.debug("Authenticating user with new auth mechanism");
                 if (!complete)
                     throw new AuthenticationException("SASL negotiation not complete");
                 return authenticate(username, password);
@@ -215,7 +211,6 @@ public class PasswordAuthenticator implements IAuthenticator
         return new PlainTextCqlSaslNegotiator() {
             public byte[] evaluateResponse(byte[] clientResponse) throws AuthenticationException
             {
-                logger.debug("Authenticating user with legacy auth mechanism");
                 return evaluateResponseAfterNegotiation(clientResponse);
             }
 

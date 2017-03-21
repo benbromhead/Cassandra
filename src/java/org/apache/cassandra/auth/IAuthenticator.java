@@ -68,7 +68,6 @@ public interface IAuthenticator
      */
     SaslNegotiator newV5SaslNegotiator(InetAddress clientAddress, Certificate[] certificates);
 
-
     /**
      * Allows the Authenticator to handle legacy clients that don't support SASL negotiation and
      * expect the class name of the authenticator from the SASL negotiator instead of a list of
@@ -80,7 +79,6 @@ public interface IAuthenticator
      * (see {@link org.apache.cassandra.auth.PlainTextCqlSaslNegotiator})
      */
     SaslNegotiator newSaslNegotiator(InetAddress clientAddress);
-
 
     /**
      * A legacy method that is still used by JMX authentication.

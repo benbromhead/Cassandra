@@ -40,7 +40,6 @@ public abstract class NegotiatingSaslNegotiator implements IAuthenticator.SaslNe
             if(!getListOfAcceptableMechanisms().contains(candidateMechanism))
                 throw new AuthenticationException("Chosen SASL mechanism is not supported");
             mechanism = candidateMechanism;
-            logger.debug("Negotiated SASL mechanism: ", mechanism );
             negotiationComplete = true;
             setupOnCompletedNegotiation();
 
