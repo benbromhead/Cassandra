@@ -158,6 +158,6 @@ public class CommonNameCertificateAuthenticator implements IAuthenticator
 
     public SaslNegotiator newSaslNegotiator(InetAddress clientAddress)
     {
-        throw new AuthenticationException("Legacy authentication not supported with CommonNameCertificateAuthenticator, please use a cql v5 compatible client");
+        throw new UnsupportedOperationException("Legacy authentication not supported with CommonNameCertificateAuthenticator, please use a cql v5 compatible client");
     }
 }

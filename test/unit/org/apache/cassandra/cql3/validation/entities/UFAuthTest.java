@@ -49,20 +49,9 @@ public class UFAuthTest extends CQLTester
     ClientState clientState;
 
     @BeforeClass
-    public static void setupAuthorizer()
+    public static void setupAuth()
     {
-        try
-        {
-            IAuthorizer authorizer = new StubAuthorizer();
-            Field authorizerField = DatabaseDescriptor.class.getDeclaredField("authorizer");
-            authorizerField.setAccessible(true);
-            authorizerField.set(null, authorizer);
-            DatabaseDescriptor.setPermissionsValidity(0);
-        }
-        catch (IllegalAccessException | NoSuchFieldException e)
-        {
-            throw new RuntimeException(e);
-        }
+        AuthTestUtils.setupAuthorizer();
     }
 
     @Before

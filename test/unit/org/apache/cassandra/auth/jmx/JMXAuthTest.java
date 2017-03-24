@@ -18,7 +18,6 @@
 
 package org.apache.cassandra.auth.jmx;
 
-import java.lang.reflect.Field;
 import java.nio.file.Paths;
 import java.rmi.server.RMISocketFactory;
 import java.util.HashMap;
@@ -63,24 +62,8 @@ public class JMXAuthTest extends CQLTester
     @BeforeClass
     public static void setupClass() throws Exception
     {
-        setupAuthorizer();
+        AuthTestUtils.setupAuthorizer();
         setupJMXServer();
-    }
-
-    private static void setupAuthorizer()
-    {
-        try
-        {
-            IAuthorizer authorizer = new StubAuthorizer();
-            Field authorizerField = DatabaseDescriptor.class.getDeclaredField("authorizer");
-            authorizerField.setAccessible(true);
-            authorizerField.set(null, authorizer);
-            DatabaseDescriptor.setPermissionsValidity(0);
-        }
-        catch (IllegalAccessException | NoSuchFieldException e)
-        {
-            throw new RuntimeException(e);
-        }
     }
 
     private static void setupJMXServer() throws Exception
