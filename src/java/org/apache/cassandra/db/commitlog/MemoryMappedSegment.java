@@ -23,6 +23,8 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 
+import co.paralleluniverse.fibers.io.FiberFileChannel;
+
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.util.FileUtils;
@@ -56,7 +58,7 @@ public class MemoryMappedSegment extends CommitLogSegment
         {
             // Extend the file size to the standard segment size.
             // NOTE: while we're using RAF to easily adjust file size, we need to avoid using RAF
-            // for grabbing the FileChannel due to FILE_SHARE_DELETE flag bug on windows.
+            // for grabbing the FiberFileChannel due to FILE_SHARE_DELETE flag bug on windows.
             // See: https://bugs.openjdk.java.net/browse/JDK-6357433 and CASSANDRA-8308
             try (RandomAccessFile raf = new RandomAccessFile(logFile, "rw"))
             {

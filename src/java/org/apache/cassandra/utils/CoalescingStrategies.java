@@ -25,7 +25,7 @@ import java.io.File;
 import java.io.RandomAccessFile;
 import java.lang.reflect.Constructor;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel.MapMode;
+import java.nio.channels.FileChannel;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
@@ -149,7 +149,7 @@ public class CoalescingStrategies
                 {
                     File outFile = File.createTempFile("coalescing_" + this.displayName + "_", ".log", new File(DEBUG_COALESCING_PATH));
                     rasTemp = new RandomAccessFile(outFile, "rw");
-                    logBufferTemp = ras.getChannel().map(MapMode.READ_WRITE, 0, Integer.MAX_VALUE);
+                    logBufferTemp = ras.getChannel().map(FileChannel.MapMode.READ_WRITE, 0, Integer.MAX_VALUE);
                     logBufferTemp.putLong(0);
                 }
                 catch (Exception e)

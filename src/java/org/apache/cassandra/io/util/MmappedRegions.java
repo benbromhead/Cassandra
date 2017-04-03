@@ -19,6 +19,8 @@
 package org.apache.cassandra.io.util;
 
 import java.nio.ByteBuffer;
+import co.paralleluniverse.fibers.io.FiberFileChannel;
+
 import java.nio.channels.FileChannel;
 import java.util.Arrays;
 

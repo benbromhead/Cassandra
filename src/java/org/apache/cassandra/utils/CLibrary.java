@@ -20,19 +20,30 @@ package org.apache.cassandra.utils;
 import java.io.File;
 import java.io.FileDescriptor;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.reflect.Field;
+
+import co.paralleluniverse.fibers.Fiber;
+import co.paralleluniverse.fibers.SuspendExecution;
+import co.paralleluniverse.fibers.io.FiberFileChannel;
+
+import java.nio.channels.AsynchronousFileChannel;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.security.PrivilegedAction;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import co.paralleluniverse.strands.SuspendableCallable;
 import com.sun.jna.LastErrorException;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
+import sun.nio.ch.SimpleAsynchronousFileChannelImpl;
 
 public final class CLibrary
 {
@@ -58,6 +69,7 @@ public final class CLibrary
 
     static boolean jnaAvailable = true;
     static boolean jnaLockable = false;
+    private static boolean async = false;
 
     static
     {
@@ -325,6 +337,55 @@ public final class CLibrary
 
             logger.warn(String.format("close(%d) failed, errno (%d).", fd, errno(e)));
         }
+    }
+
+    public static int getfd(File file)
+    {
+        if(async) {
+            return getfdAsync(file);
+        } else {
+            try
+            {
+                FileInputStream fis = new FileInputStream(file);
+                FileDescriptor fd = fis.getFD();
+                fis.close();
+                return getfd(fd);
+            }
+            catch (IOException e)
+            {
+                e.printStackTrace();
+            }
+        }
+        return -1;
+    }
+
+    public static int getfdAsync(File file)
+    {
+        try
+        {
+            return new Fiber<Integer>(new SuspendableCallable<Integer>() {
+                public Integer run() throws SuspendExecution, InterruptedException {
+                    try
+                    {
+                        FileInputStream fis = new FileInputStream(file);
+                        FileDescriptor fd = fis.getFD();
+                        fis.close();
+                        return getfd(fd);
+                    }
+                    catch (IOException e)
+                    {
+                        e.printStackTrace();
+                    }
+                    return -1;
+                }
+            }).get();
+        }
+        catch (ExecutionException | InterruptedException e)
+        {
+            e.printStackTrace();
+        }
+
+        return -1;
     }
 
     public static int getfd(FileChannel channel)

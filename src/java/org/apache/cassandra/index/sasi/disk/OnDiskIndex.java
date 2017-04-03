@@ -19,9 +19,13 @@ package org.apache.cassandra.index.sasi.disk;
 
 import java.io.*;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.file.OpenOption;
+import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import co.paralleluniverse.fibers.io.FiberFileChannel;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.index.sasi.Term;
 import org.apache.cassandra.index.sasi.plan.Expression;
@@ -142,7 +146,7 @@ public class OnDiskIndex implements Iterable<OnDiskIndex.DataTerm>, Closeable
             hasMarkedPartials = backingFile.readBoolean();
 
             indexSize = backingFile.length();
-            indexFile = new MappedBuffer(new ChannelProxy(indexPath, backingFile.getChannel()));
+            indexFile = new MappedBuffer(new ChannelProxy(indexPath));
 
             // start of the levels
             indexFile.position(indexFile.getLong(indexSize - 8));

@@ -18,9 +18,10 @@
 package org.apache.cassandra.db.commitlog;
 
 import java.io.File;
+import java.io.FileDescriptor;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
+import co.paralleluniverse.fibers.io.FiberFileChannel;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,6 +33,7 @@ import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import co.paralleluniverse.fibers.io.FiberFileChannel;
 import com.codahale.metrics.Timer;
 import org.apache.cassandra.config.*;
 import org.apache.cassandra.db.Mutation;
@@ -110,7 +112,7 @@ public abstract class CommitLogSegment
     public final long id;
 
     final File logFile;
-    final FileChannel channel;
+    final AIOFiberFileChannel channel;
     final int fd;
 
     protected final AbstractCommitLogSegmentManager manager;
@@ -164,8 +166,8 @@ public abstract class CommitLogSegment
 
         try
         {
-            channel = FileChannel.open(logFile.toPath(), StandardOpenOption.WRITE, StandardOpenOption.READ, StandardOpenOption.CREATE);
-            fd = CLibrary.getfd(channel);
+            channel = AIOFiberFileChannel.open(logFile.toPath(), StandardOpenOption.WRITE, StandardOpenOption.READ, StandardOpenOption.CREATE);
+            fd = CLibrary.getfd(logFile);
         }
         catch (IOException e)
         {

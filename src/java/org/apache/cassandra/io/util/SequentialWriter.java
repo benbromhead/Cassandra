@@ -19,7 +19,7 @@ package org.apache.cassandra.io.util;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.channels.FileChannel;
+import co.paralleluniverse.fibers.io.FiberFileChannel;
 import java.nio.file.StandardOpenOption;
 
 import org.apache.cassandra.io.FSReadError;
@@ -27,6 +27,7 @@ import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.utils.SyncUtil;
 import org.apache.cassandra.utils.concurrent.Transactional;
 
+import static co.paralleluniverse.fibers.io.FiberFileChannel.open;
 import static org.apache.cassandra.utils.Throwables.merge;
 
 /**
@@ -41,7 +42,7 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
     // Offset for start of buffer relative to underlying file
     protected long bufferOffset;
 
-    protected final FileChannel fchannel;
+    protected final AIOFiberFileChannel fchannel;
 
     // whether to do trickling fsync() to avoid sudden bursts of dirty buffer flushing by kernel causing read
     // latency spikes
@@ -91,17 +92,17 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
     }
 
     // TODO: we should specify as a parameter if we permit an existing file or not
-    private static FileChannel openChannel(File file)
+    private static AIOFiberFileChannel openChannel(File file)
     {
         try
         {
             if (file.exists())
             {
-                return FileChannel.open(file.toPath(), StandardOpenOption.READ, StandardOpenOption.WRITE);
+                return open(file.toPath(), StandardOpenOption.READ, StandardOpenOption.WRITE);
             }
             else
             {
-                FileChannel channel = FileChannel.open(file.toPath(), StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW);
+                AIOFiberFileChannel channel = open(file.toPath(), StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW);
                 try
                 {
                     SyncUtil.trySyncDir(file.getParentFile());
@@ -140,7 +141,7 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
     {
         super(openChannel(file), option.allocateBuffer());
         strictFlushing = true;
-        fchannel = (FileChannel)channel;
+        fchannel = (AIOFiberFileChannel)channel;
 
         filePath = file.getAbsolutePath();
 

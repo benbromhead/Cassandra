@@ -21,6 +21,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
+
 import java.nio.channels.FileChannel;
 import java.nio.channels.WritableByteChannel;
 import java.nio.file.StandardOpenOption;
@@ -30,11 +31,12 @@ import org.apache.cassandra.utils.CLibrary;
 import org.apache.cassandra.utils.concurrent.RefCounted;
 import org.apache.cassandra.utils.concurrent.SharedCloseableImpl;
 
+
 /**
- * A proxy of a FileChannel that:
+ * A proxy of a FiberFileChannel that:
  *
  * - implements reference counting
- * - exports only thread safe FileChannel operations
+ * - exports only thread safe FiberFileChannel operations
  * - wraps IO exceptions into runtime exceptions
  *
  * Tested by RandomAccessReaderTest.
@@ -42,13 +44,13 @@ import org.apache.cassandra.utils.concurrent.SharedCloseableImpl;
 public final class ChannelProxy extends SharedCloseableImpl
 {
     private final String filePath;
-    private final FileChannel channel;
+    private final AIOFiberFileChannel channel;
 
-    public static FileChannel openChannel(File file)
+    public static AIOFiberFileChannel openChannel(File file)
     {
         try
         {
-            return FileChannel.open(file.toPath(), StandardOpenOption.READ);
+            return AIOFiberFileChannel.open(file.toPath(), StandardOpenOption.READ);
         }
         catch (IOException e)
         {
@@ -66,7 +68,7 @@ public final class ChannelProxy extends SharedCloseableImpl
         this(file.getPath(), openChannel(file));
     }
 
-    public ChannelProxy(String filePath, FileChannel channel)
+    public ChannelProxy(String filePath, AIOFiberFileChannel channel)
     {
         super(new Cleanup(filePath, channel));
 
@@ -85,9 +87,9 @@ public final class ChannelProxy extends SharedCloseableImpl
     private final static class Cleanup implements RefCounted.Tidy
     {
         final String filePath;
-        final FileChannel channel;
+        final AIOFiberFileChannel channel;
 
-        Cleanup(String filePath, FileChannel channel)
+        Cleanup(String filePath, AIOFiberFileChannel channel)
         {
             this.filePath = filePath;
             this.channel = channel;
@@ -172,7 +174,7 @@ public final class ChannelProxy extends SharedCloseableImpl
 
     public int getFileDescriptor()
     {
-        return CLibrary.getfd(channel);
+        return CLibrary.getfd(new File(filePath));
     }
 
     @Override

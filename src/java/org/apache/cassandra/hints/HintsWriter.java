@@ -21,7 +21,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
+import co.paralleluniverse.fibers.io.FiberFileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
@@ -48,13 +48,13 @@ class HintsWriter implements AutoCloseable
     private final File directory;
     private final HintsDescriptor descriptor;
     private final File file;
-    protected final FileChannel channel;
+    protected final AIOFiberFileChannel channel;
     private final int fd;
     protected final CRC32 globalCRC;
 
     private volatile long lastSyncPosition = 0L;
 
-    protected HintsWriter(File directory, HintsDescriptor descriptor, File file, FileChannel channel, int fd, CRC32 globalCRC)
+    protected HintsWriter(File directory, HintsDescriptor descriptor, File file, AIOFiberFileChannel channel, int fd, CRC32 globalCRC)
     {
         this.directory = directory;
         this.descriptor = descriptor;
@@ -69,8 +69,8 @@ class HintsWriter implements AutoCloseable
     {
         File file = new File(directory, descriptor.fileName());
 
-        FileChannel channel = FileChannel.open(file.toPath(), StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW);
-        int fd = CLibrary.getfd(channel);
+        AIOFiberFileChannel channel = AIOFiberFileChannel.open(file.toPath(), StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW);
+        int fd = CLibrary.getfd(file);
 
         CRC32 crc = new CRC32();
 

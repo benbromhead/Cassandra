@@ -19,7 +19,7 @@ package org.apache.cassandra.io.util;
 
 import java.io.*;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
+import co.paralleluniverse.fibers.io.FiberFileChannel;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -210,7 +210,7 @@ public final class FileUtils
     }
     public static void truncate(String path, long size)
     {
-        try(FileChannel channel = FileChannel.open(Paths.get(path), StandardOpenOption.READ, StandardOpenOption.WRITE))
+        try(FiberFileChannel channel = FiberFileChannel.open(Paths.get(path), StandardOpenOption.READ, StandardOpenOption.WRITE))
         {
             channel.truncate(size);
         }

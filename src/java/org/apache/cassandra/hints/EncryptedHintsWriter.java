@@ -20,7 +20,7 @@ package org.apache.cassandra.hints;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
+import co.paralleluniverse.fibers.io.FiberFileChannel;
 import java.util.zip.CRC32;
 import javax.crypto.Cipher;
 
@@ -37,7 +37,7 @@ public class EncryptedHintsWriter extends HintsWriter
     private final ICompressor compressor;
     private volatile ByteBuffer byteBuffer;
 
-    protected EncryptedHintsWriter(File directory, HintsDescriptor descriptor, File file, FileChannel channel, int fd, CRC32 globalCRC)
+    protected EncryptedHintsWriter(File directory, HintsDescriptor descriptor, File file, AIOFiberFileChannel channel, int fd, CRC32 globalCRC)
     {
         super(directory, descriptor, file, channel, fd, globalCRC);
         cipher = descriptor.getCipher();

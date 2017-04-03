@@ -20,7 +20,7 @@ package org.apache.cassandra.index.sasi.utils;
 import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel.MapMode;
+import java.nio.channels.FileChannel;
 
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.util.ChannelProxy;
@@ -75,7 +75,7 @@ public class MappedBuffer implements Closeable
             for (int i = 0; i < pages.length; i++)
             {
                 long pageSize = Math.min(this.pageSize, (capacity - offset));
-                pages[i] = file.map(MapMode.READ_ONLY, offset, pageSize);
+                pages[i] = file.map(FileChannel.MapMode.READ_ONLY, offset, pageSize);
                 offset += pageSize;
             }
         }

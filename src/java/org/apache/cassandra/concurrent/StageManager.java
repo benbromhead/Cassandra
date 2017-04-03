@@ -41,6 +41,7 @@ public class StageManager
     private static final EnumMap<Stage, LocalAwareExecutorService> stages = new EnumMap<Stage, LocalAwareExecutorService>(Stage.class);
 
     public static final long KEEPALIVE = 60; // seconds to keep "extra" threads alive for when idle
+    public static final boolean USE_FIBER = true;
 
     static
     {
@@ -89,7 +90,8 @@ public class StageManager
 
     private static LocalAwareExecutorService multiThreadedLowSignalStage(Stage stage, int numThreads)
     {
-        return SharedExecutorPool.SHARED.newExecutor(numThreads, Integer.MAX_VALUE, stage.getJmxType(), stage.getJmxName());
+//        return SharedExecutorPool.SHARED.newExecutor(numThreads, Integer.MAX_VALUE, stage.getJmxType(), stage.getJmxName());
+        return SharedFiberExecutor.SHARED.newScheduler();
     }
 
     /**

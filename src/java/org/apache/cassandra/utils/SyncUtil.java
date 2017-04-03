@@ -24,7 +24,7 @@ import java.io.*;
 import java.lang.reflect.Field;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.ClosedChannelException;
-import java.nio.channels.FileChannel;
+import co.paralleluniverse.fibers.io.FiberFileChannel;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.cassandra.config.Config;
@@ -145,7 +145,7 @@ public class SyncUtil
         }
     }
 
-    public static void force(FileChannel fc, boolean metaData) throws IOException
+    public static void force(AIOFiberFileChannel fc, boolean metaData) throws IOException
     {
         Preconditions.checkNotNull(fc);
         if (SKIP_SYNC)

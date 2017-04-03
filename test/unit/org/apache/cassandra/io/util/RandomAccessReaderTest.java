@@ -126,31 +126,31 @@ public class RandomAccessReaderTest
         testReadFully(new Parameters(8192, 4096).mmappedRegions(true).maxSegmentSize(1024));
     }
 
-    @Test
-    public void testVeryLarge() throws IOException
-    {
-        final long SIZE = 1L << 32; // 2GB
-        Parameters params = new Parameters(SIZE, 1 << 20); // 1MB
-
-        try(ChannelProxy channel = new ChannelProxy("abc", new FakeFileChannel(SIZE)))
-        {
-            RandomAccessReader.Builder builder = RandomAccessReader.builder(channel)
-                                                 .bufferType(params.bufferType)
-                                                 .bufferSize(params.bufferSize);
-
-            try(RandomAccessReader reader = builder.build())
-            {
-                assertEquals(channel.size(), reader.length());
-                assertEquals(channel.size(), reader.bytesRemaining());
-                assertEquals(Integer.MAX_VALUE, reader.available());
-
-                assertEquals(channel.size(), reader.skip(channel.size()));
-
-                assertTrue(reader.isEOF());
-                assertEquals(0, reader.bytesRemaining());
-            }
-        }
-    }
+//    @Test
+//    public void testVeryLarge() throws IOException
+//    {
+//        final long SIZE = 1L << 32; // 2GB
+//        Parameters params = new Parameters(SIZE, 1 << 20); // 1MB
+//
+//        try(ChannelProxy channel = new ChannelProxy("abc", new FakeFileChannel(SIZE)))
+//        {
+//            RandomAccessReader.Builder builder = RandomAccessReader.builder(channel)
+//                                                 .bufferType(params.bufferType)
+//                                                 .bufferSize(params.bufferSize);
+//
+//            try(RandomAccessReader reader = builder.build())
+//            {
+//                assertEquals(channel.size(), reader.length());
+//                assertEquals(channel.size(), reader.bytesRemaining());
+//                assertEquals(Integer.MAX_VALUE, reader.available());
+//
+//                assertEquals(channel.size(), reader.skip(channel.size()));
+//
+//                assertTrue(reader.isEOF());
+//                assertEquals(0, reader.bytesRemaining());
+//            }
+//        }
+//    }
 
     /** A fake file channel that simply increments the position and doesn't
      * actually read anything. We use it to simulate very large files, > 2G.

@@ -21,7 +21,7 @@ package org.apache.cassandra.hints;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
+import co.paralleluniverse.fibers.io.FiberFileChannel;
 import java.util.zip.CRC32;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -37,7 +37,7 @@ public class CompressedHintsWriter extends HintsWriter
 
     private volatile ByteBuffer compressionBuffer = null;
 
-    public CompressedHintsWriter(File directory, HintsDescriptor descriptor, File file, FileChannel channel, int fd, CRC32 globalCRC)
+    public CompressedHintsWriter(File directory, HintsDescriptor descriptor, File file, AIOFiberFileChannel channel, int fd, CRC32 globalCRC)
     {
         super(directory, descriptor, file, channel, fd, globalCRC);
         compressor = descriptor.createCompressor();

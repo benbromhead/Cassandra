@@ -26,16 +26,17 @@ import io.netty.util.concurrent.Future;
 import org.apache.cassandra.concurrent.LocalAwareExecutorService;
 import org.apache.cassandra.config.DatabaseDescriptor;
 
-import static org.apache.cassandra.concurrent.SharedExecutorPool.SHARED;
+import static org.apache.cassandra.concurrent.SharedFiberExecutor.SHARED;
 
 public class RequestThreadPoolExecutor extends AbstractEventExecutor
 {
     private final static int MAX_QUEUED_REQUESTS = Integer.getInteger("cassandra.max_queued_native_transport_requests", 128);
     private final static String THREAD_FACTORY_ID = "Native-Transport-Requests";
-    private final LocalAwareExecutorService wrapped = SHARED.newExecutor(DatabaseDescriptor.getNativeTransportMaxThreads(),
-                                                                           MAX_QUEUED_REQUESTS,
-                                                                           "transport",
-                                                                           THREAD_FACTORY_ID);
+//    private final LocalAwareExecutorService wrapped = SHARED.newExecutor(DatabaseDescriptor.getNativeTransportMaxThreads(),
+//                                                                           MAX_QUEUED_REQUESTS,
+//                                                                           "transport",
+//                                                                           THREAD_FACTORY_ID);
+    private final LocalAwareExecutorService wrapped = SHARED.newScheduler();
 
     public boolean isShuttingDown()
     {
