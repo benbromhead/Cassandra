@@ -100,7 +100,7 @@ public class StartupMessage extends Message.Request
 
         if (DatabaseDescriptor.getAuthenticator().requireAuthentication())
         {
-            if (new CassandraVersion(cqlVersion).major < 4)
+            if (new CassandraVersion(cqlVersion).major <= 4)
                 return new AuthenticateMessage(DatabaseDescriptor.getAuthenticator().getClass().getName());
             else
                 return new AuthenticateMessage(String.join(",", DatabaseDescriptor.getAuthenticator().getSupportedSaslMechanisms()));

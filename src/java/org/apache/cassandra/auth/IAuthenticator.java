@@ -61,7 +61,7 @@ public interface IAuthenticator
      * attempt.
      * @param clientAddress the IP address of the client whom we wish to authenticate, or null
      *                      if an internal client (one not connected over the remote transport).
-     * @param certificates the verified client certificates from the connection associtted with the
+     * @param certificates the verified client certificates from the connection associated with the
      *                     authentication request, or null if client encryption is not enabled
      * @return org.apache.cassandra.auth.IAuthenticator.SaslNegotiator implementation
      * (see {@link org.apache.cassandra.auth.PlainTextCqlSaslNegotiator})
