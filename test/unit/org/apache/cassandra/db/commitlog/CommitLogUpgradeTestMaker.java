@@ -26,6 +26,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
@@ -97,7 +98,7 @@ public class CommitLogUpgradeTestMaker
                                     metadata);
     }
 
-    public void makeLog() throws IOException, InterruptedException
+    public void makeLog() throws IOException, InterruptedException, ExecutionException
     {
         CommitLog commitLog = CommitLog.instance;
         System.out.format("\nUsing commit log size: %dmb, compressor: %s, encryption: %s, sync: %s, %s\n",
