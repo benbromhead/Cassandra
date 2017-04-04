@@ -21,6 +21,7 @@ import java.io.*;
 import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.concurrent.ExecutionException;
 import java.util.zip.CRC32;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
@@ -403,7 +404,7 @@ public class CommitLog implements CommitLogMBean
     /**
      * Shuts down the threads used by the commit log, blocking until completion.
      */
-    public void shutdownBlocking() throws InterruptedException
+    public void shutdownBlocking() throws InterruptedException, ExecutionException
     {
         executor.shutdown();
         executor.awaitTermination();

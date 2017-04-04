@@ -177,7 +177,7 @@ public class CommitLogStressTest
         testAllLogConfigs();
     }
 
-    public void testAllLogConfigs() throws IOException, InterruptedException
+    public void testAllLogConfigs() throws IOException, InterruptedException, ExecutionException
     {
         failed = false;
         DatabaseDescriptor.setCommitLogSyncBatchWindow(1);
@@ -196,7 +196,7 @@ public class CommitLogStressTest
         testLog(null, EncryptionContextGenerator.createContext(true));
     }
 
-    public void testLog(ParameterizedClass compression, EncryptionContext encryptionContext) throws IOException, InterruptedException
+    public void testLog(ParameterizedClass compression, EncryptionContext encryptionContext) throws IOException, InterruptedException, ExecutionException
     {
         DatabaseDescriptor.setCommitLogCompression(compression);
         DatabaseDescriptor.setEncryptionContext(encryptionContext);
@@ -221,7 +221,8 @@ public class CommitLogStressTest
         }
     }
 
-    public void testLog(CommitLog commitLog) throws IOException, InterruptedException {
+    public void testLog(CommitLog commitLog) throws IOException, InterruptedException, ExecutionException
+    {
         System.out.format("\nTesting commit log size %.0fmb, compressor: %s, encryption enabled: %b, sync %s%s%s\n",
                            mb(DatabaseDescriptor.getCommitLogSegmentSize()),
                            commitLog.configuration.getCompressorName(),
