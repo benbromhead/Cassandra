@@ -31,6 +31,7 @@ import org.slf4j.LoggerFactory;
 
 import co.paralleluniverse.fibers.Fiber;
 import co.paralleluniverse.fibers.SuspendExecution;
+import co.paralleluniverse.fibers.Suspendable;
 import co.paralleluniverse.strands.SuspendableRunnable;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
@@ -91,6 +92,7 @@ public abstract class AbstractCommitLogSegmentManager
         this.storageDirectory = storageDirectory;
     }
 
+    @Suspendable
     void start()
     {
         // The run loop for the manager thread
@@ -530,6 +532,7 @@ public abstract class AbstractCommitLogSegmentManager
     /**
      * Returns when the management thread terminates.
      */
+    @Suspendable
     public void awaitTermination() throws InterruptedException, ExecutionException
     {
         managerThread.join();
