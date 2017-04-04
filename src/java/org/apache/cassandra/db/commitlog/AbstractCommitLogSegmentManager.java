@@ -29,10 +29,6 @@ import com.google.common.util.concurrent.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import co.paralleluniverse.fibers.Fiber;
-import co.paralleluniverse.fibers.SuspendExecution;
-import co.paralleluniverse.fibers.Suspendable;
-import co.paralleluniverse.strands.SuspendableRunnable;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
@@ -79,7 +75,7 @@ public abstract class AbstractCommitLogSegmentManager
      */
     volatile boolean createReserveSegments = false;
 
-    private Fiber<Void> managerThread;
+    private Thread managerThread;
     protected volatile boolean run = true;
     protected final CommitLog commitLog;
 
@@ -92,13 +88,12 @@ public abstract class AbstractCommitLogSegmentManager
         this.storageDirectory = storageDirectory;
     }
 
-    @Suspendable
     void start()
     {
         // The run loop for the manager thread
-        SuspendableRunnable runnable = new SuspendableRunnable()
+        Runnable runnable = new WrappedRunnable()
         {
-            public void run()
+            public void runMayThrow() throws Exception
             {
                 while (run)
                 {
@@ -168,7 +163,7 @@ public abstract class AbstractCommitLogSegmentManager
 
         run = true;
 
-        managerThread = new Fiber<>("COMMIT-LOG-ALLOCATOR", runnable);
+        managerThread = new Thread(runnable, "COMMIT-LOG-ALLOCATOR");
         managerThread.start();
     }
 
@@ -478,7 +473,7 @@ public abstract class AbstractCommitLogSegmentManager
         {
             awaitTermination();
         }
-        catch (InterruptedException | ExecutionException e)
+        catch (InterruptedException e)
         {
             throw new RuntimeException(e);
         }
@@ -532,8 +527,7 @@ public abstract class AbstractCommitLogSegmentManager
     /**
      * Returns when the management thread terminates.
      */
-    @Suspendable
-    public void awaitTermination() throws InterruptedException, ExecutionException
+    public void awaitTermination() throws InterruptedException
     {
         managerThread.join();
 
