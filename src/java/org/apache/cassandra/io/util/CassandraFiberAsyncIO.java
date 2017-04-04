@@ -59,9 +59,9 @@ abstract class CassandraFiberAsyncIO<V> extends FiberAsync<V, IOException>
                 CassandraFiberAsyncIO.this.asyncFailed(new IOException(message));
             }
 
-            public void done()
+            public void done(int bytesread)
             {
-                CassandraFiberAsyncIO.this.asyncCompleted(null);
+                CassandraFiberAsyncIO.this.asyncCompleted((V) new Integer(bytesread));
             }
         };
     }

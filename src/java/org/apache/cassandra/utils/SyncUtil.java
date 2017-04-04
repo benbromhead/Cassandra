@@ -28,6 +28,7 @@ import co.paralleluniverse.fibers.io.FiberFileChannel;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.cassandra.config.Config;
+import org.apache.cassandra.io.util.AIOFiberFileChannel;
 
 import com.google.common.base.Preconditions;
 

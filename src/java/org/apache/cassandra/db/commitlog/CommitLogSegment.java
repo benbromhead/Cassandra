@@ -40,6 +40,7 @@ import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.commitlog.CommitLog.Configuration;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.io.FSWriteError;
+import org.apache.cassandra.io.util.AIOFiberFileChannel;
 import org.apache.cassandra.utils.CLibrary;
 import org.apache.cassandra.utils.IntegerInterval;
 import org.apache.cassandra.utils.concurrent.OpOrder;
@@ -166,7 +167,7 @@ public abstract class CommitLogSegment
 
         try
         {
-            channel = AIOFiberFileChannel.open(logFile.toPath(), StandardOpenOption.WRITE, StandardOpenOption.READ, StandardOpenOption.CREATE);
+            channel = AIOFiberFileChannel.open(logFile.toPath(), false);
             fd = CLibrary.getfd(logFile);
         }
         catch (IOException e)

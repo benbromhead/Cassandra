@@ -30,10 +30,16 @@ import java.nio.channels.SeekableByteChannel;
 import java.nio.channels.WritableByteChannel;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileAttribute;
+
+import co.paralleluniverse.fibers.Fiber;
+import co.paralleluniverse.fibers.SuspendExecution;
 import co.paralleluniverse.fibers.Suspendable;
+import co.paralleluniverse.strands.SuspendableCallable;
+import co.paralleluniverse.strands.SuspendableRunnable;
 import org.apache.activemq.artemis.jlibaio.LibaioContext;
 import org.apache.activemq.artemis.jlibaio.LibaioFile;
 import org.apache.activemq.artemis.jlibaio.SubmitInfo;
+import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 public class AIOFiberFileChannel implements SeekableByteChannel, GatheringByteChannel, ScatteringByteChannel, AutoCloseable
 {
@@ -43,9 +49,19 @@ public class AIOFiberFileChannel implements SeekableByteChannel, GatheringByteCh
     private long position = 0;
 
     private LibaioFile file;
+    private Path path;
+    private boolean direct;
 
-    AIOFiberFileChannel(LibaioFile file) {
-        this.file = file;
+    AIOFiberFileChannel(Path path, boolean direct) throws IOException
+    {
+        this.file = aioContext.openFile(path.toString(), direct);
+        this.path = path;
+        this.direct = direct;
+    }
+
+    public void force(boolean metaData)
+    {
+        //cannot flush??
     }
 
     private static class AIOHolder {
@@ -63,7 +79,7 @@ public class AIOFiberFileChannel implements SeekableByteChannel, GatheringByteCh
 
     @Suspendable
     public static AIOFiberFileChannel open(Path path, boolean direct) throws IOException {
-        return new AIOFiberFileChannel(aioContext.openFile(path.toString(), direct));
+        return new AIOFiberFileChannel(path, direct);
     }
 
     @Override
@@ -136,7 +152,14 @@ public class AIOFiberFileChannel implements SeekableByteChannel, GatheringByteCh
         return new CassandraFiberAsyncIO<Integer>() {
             @Override
             protected void requestAsync() {
-                ac.write(src, position, null, makeCallback());
+                try
+                {
+                    file.write(position, src.capacity(), src, makeCallback());
+                }
+                catch (IOException e)
+                {
+                    e.printStackTrace();
+                }
             }
         }.runSneaky();
     }
@@ -166,34 +189,28 @@ public class AIOFiberFileChannel implements SeekableByteChannel, GatheringByteCh
 
     @Override
     public long size() throws IOException {
-        return ac.size();
+        return file.getSize();
     }
 
     @Suspendable
     public FileLock lock(final long position, final long size, final boolean shared) throws IOException {
-        return new CassandraFiberAsyncIO<FileLock>() {
-            @Override
-            protected void requestAsync() {
-                ac.lock(position, size, shared, null, makeCallback());
-            }
-        }.runSneaky();
+        throw new NotImplementedException();
     }
 
-    public void force(boolean metaData) throws IOException {
-        ac.force(metaData);
-    }
 
     @Override
     public AIOFiberFileChannel truncate(long size) throws IOException {
-        ac.truncate(size);
-        return this;
+        this.close();
+        FileChannel.open(path).truncate(size).close(); //this is an ugly hack
+        return new AIOFiberFileChannel(path, direct);
     }
 
     public FileLock tryLock(long position, long size, boolean shared) throws IOException {
-        return ac.tryLock(position, size, shared);
+        throw new NotImplementedException();
     }
 
     public long transferTo(long position, long count, WritableByteChannel target) throws IOException {
+
         throw new UnsupportedOperationException();
     }
 

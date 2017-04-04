@@ -24,6 +24,7 @@ import java.nio.MappedByteBuffer;
 
 import java.nio.channels.FileChannel;
 import java.nio.channels.WritableByteChannel;
+import java.nio.file.OpenOption;
 import java.nio.file.StandardOpenOption;
 
 import org.apache.cassandra.io.FSReadError;
@@ -45,12 +46,13 @@ public final class ChannelProxy extends SharedCloseableImpl
 {
     private final String filePath;
     private final AIOFiberFileChannel channel;
+    private FileChannel fc;
 
     public static AIOFiberFileChannel openChannel(File file)
     {
         try
         {
-            return AIOFiberFileChannel.open(file.toPath(), StandardOpenOption.READ);
+            return AIOFiberFileChannel.open(file.toPath(), false);
         }
         catch (IOException e)
         {
@@ -60,20 +62,28 @@ public final class ChannelProxy extends SharedCloseableImpl
 
     public ChannelProxy(String path)
     {
-        this (new File(path));
+        this(new File(path));
     }
 
     public ChannelProxy(File file)
     {
-        this(file.getPath(), openChannel(file));
+        this(file, openChannel(file));
     }
 
-    public ChannelProxy(String filePath, AIOFiberFileChannel channel)
+    public ChannelProxy(File file, AIOFiberFileChannel channel)
     {
-        super(new Cleanup(filePath, channel));
+        super(new Cleanup(file.getPath(), channel));
 
-        this.filePath = filePath;
+        this.filePath = file.getPath();
         this.channel = channel;
+        try
+        {
+            this.fc = FileChannel.open(file.toPath(), StandardOpenOption.READ);
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 
     public ChannelProxy(ChannelProxy copy)
@@ -140,7 +150,7 @@ public final class ChannelProxy extends SharedCloseableImpl
     {
         try
         {
-            return channel.transferTo(position, count, target);
+            return fc.transferTo(position, count, target);
         }
         catch (IOException e)
         {
@@ -152,7 +162,7 @@ public final class ChannelProxy extends SharedCloseableImpl
     {
         try
         {
-            return channel.map(mode, position, size);
+            return fc.map(mode, position, size);
         }
         catch (IOException e)
         {

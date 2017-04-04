@@ -26,6 +26,7 @@ import javax.crypto.Cipher;
 
 import com.google.common.annotations.VisibleForTesting;
 
+import org.apache.cassandra.io.util.AIOFiberFileChannel;
 import org.apache.cassandra.security.EncryptionUtils;
 import org.apache.cassandra.io.compress.ICompressor;
 

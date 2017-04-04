@@ -27,6 +27,7 @@ import java.util.zip.CRC32;
 import com.google.common.annotations.VisibleForTesting;
 
 import org.apache.cassandra.io.compress.ICompressor;
+import org.apache.cassandra.io.util.AIOFiberFileChannel;
 
 public class CompressedHintsWriter extends HintsWriter
 {

@@ -29,6 +29,9 @@ import com.google.common.util.concurrent.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import co.paralleluniverse.fibers.Fiber;
+import co.paralleluniverse.fibers.SuspendExecution;
+import co.paralleluniverse.strands.SuspendableRunnable;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
@@ -75,7 +78,7 @@ public abstract class AbstractCommitLogSegmentManager
      */
     volatile boolean createReserveSegments = false;
 
-    private Thread managerThread;
+    private Fiber<Void> managerThread;
     protected volatile boolean run = true;
     protected final CommitLog commitLog;
 
@@ -91,9 +94,9 @@ public abstract class AbstractCommitLogSegmentManager
     void start()
     {
         // The run loop for the manager thread
-        Runnable runnable = new WrappedRunnable()
+        SuspendableRunnable runnable = new SuspendableRunnable()
         {
-            public void runMayThrow() throws Exception
+            public void run()
             {
                 while (run)
                 {
@@ -163,7 +166,7 @@ public abstract class AbstractCommitLogSegmentManager
 
         run = true;
 
-        managerThread = new Thread(runnable, "COMMIT-LOG-ALLOCATOR");
+        managerThread = new Fiber<>("COMMIT-LOG-ALLOCATOR", runnable);
         managerThread.start();
     }
 
@@ -473,7 +476,7 @@ public abstract class AbstractCommitLogSegmentManager
         {
             awaitTermination();
         }
-        catch (InterruptedException e)
+        catch (InterruptedException | ExecutionException e)
         {
             throw new RuntimeException(e);
         }
@@ -527,7 +530,7 @@ public abstract class AbstractCommitLogSegmentManager
     /**
      * Returns when the management thread terminates.
      */
-    public void awaitTermination() throws InterruptedException
+    public void awaitTermination() throws InterruptedException, ExecutionException
     {
         managerThread.join();
 

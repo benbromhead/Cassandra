@@ -27,7 +27,6 @@ import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.utils.SyncUtil;
 import org.apache.cassandra.utils.concurrent.Transactional;
 
-import static co.paralleluniverse.fibers.io.FiberFileChannel.open;
 import static org.apache.cassandra.utils.Throwables.merge;
 
 /**
@@ -98,11 +97,11 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
         {
             if (file.exists())
             {
-                return open(file.toPath(), StandardOpenOption.READ, StandardOpenOption.WRITE);
+                return AIOFiberFileChannel.open(file.toPath(), false);
             }
             else
             {
-                AIOFiberFileChannel channel = open(file.toPath(), StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW);
+                AIOFiberFileChannel channel = AIOFiberFileChannel.open(file.toPath(), false);
                 try
                 {
                     SyncUtil.trySyncDir(file.getParentFile());

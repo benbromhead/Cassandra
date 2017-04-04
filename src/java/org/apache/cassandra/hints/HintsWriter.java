@@ -31,6 +31,7 @@ import com.google.common.annotations.VisibleForTesting;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.io.FSWriteError;
+import org.apache.cassandra.io.util.AIOFiberFileChannel;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputBufferFixed;
 import org.apache.cassandra.utils.CLibrary;
@@ -69,7 +70,7 @@ class HintsWriter implements AutoCloseable
     {
         File file = new File(directory, descriptor.fileName());
 
-        AIOFiberFileChannel channel = AIOFiberFileChannel.open(file.toPath(), StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW);
+        AIOFiberFileChannel channel = AIOFiberFileChannel.open(file.toPath(), false);
         int fd = CLibrary.getfd(file);
 
         CRC32 crc = new CRC32();
