@@ -25,7 +25,9 @@ import java.security.cert.X509Certificate;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 import javax.naming.InvalidNameException;
 import javax.naming.ldap.LdapName;
 import javax.naming.ldap.Rdn;
@@ -111,7 +113,7 @@ public class CommonNameCertificateAuthenticator implements IAuthenticator
     }
 
 
-    public SaslNegotiator newV5SaslNegotiator(InetAddress clientAddress, Certificate[] certificates)
+    public SaslNegotiator newV5SaslNegotiator(InetAddress clientAddress, Optional<Certificate[]> certificates)
     {
         return new NegotiatingSaslNegotiator() {
             private boolean isAuthComplete = false;
@@ -123,10 +125,17 @@ public class CommonNameCertificateAuthenticator implements IAuthenticator
                 return isNegotiationComplete() && isAuthComplete;
             }
 
+            private Certificate[] getCerts() throws AuthenticationException {
+                return certificates.orElseThrow((Supplier<AuthenticationException>) () ->
+                {
+                    throw new AuthenticationException("Could not load client certificates");
+                });
+            }
+
             public AuthenticatedUser getAuthenticatedUser() throws AuthenticationException
             {
                 if(user == null)
-                    user = authenticate(certificates);
+                    user = authenticate(getCerts());
                 return user;
             }
 
@@ -139,7 +148,7 @@ public class CommonNameCertificateAuthenticator implements IAuthenticator
             public byte[] evaluateResponse(byte[] clientResponse)
             {
                 super.evaluateResponse(clientResponse);
-                user = authenticate(certificates);
+                user = authenticate(getCerts());
                 isAuthComplete = true;
                 return null;
             }

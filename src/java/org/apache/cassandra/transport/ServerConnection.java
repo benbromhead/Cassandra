@@ -18,6 +18,7 @@
 package org.apache.cassandra.transport;
 
 import java.security.cert.Certificate;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -119,12 +120,12 @@ public class ServerConnection extends Connection
     public IAuthenticator.SaslNegotiator getSaslNegotiator(QueryState queryState)
     {
         if (saslNegotiator == null) {
-            Certificate[] certificates = null;
+            Optional<Certificate[]> certificates = null;
             if(DatabaseDescriptor.getClientEncryptionOptions().enabled && !DatabaseDescriptor.getClientEncryptionOptions().optional) {
                 try
                 {
                     SslHandler handler = (SslHandler)channel().pipeline().get("ssl");
-                    certificates = handler.engine().getSession().getPeerCertificates();
+                    certificates = Optional.ofNullable(handler.engine().getSession().getPeerCertificates());
                 }
                 catch (SSLPeerUnverifiedException | NullPointerException e)
                 {

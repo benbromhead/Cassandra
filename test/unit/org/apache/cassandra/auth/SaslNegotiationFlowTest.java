@@ -20,6 +20,7 @@ package org.apache.cassandra.auth;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.Optional;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -54,7 +55,7 @@ public class SaslNegotiationFlowTest
     public void testSASLNegotiatorFlow() throws UnknownHostException
     {
         IAuthenticator authenticator = new PasswordAuthenticator();
-        PlainTextCqlSaslNegotiator negotiator = (PlainTextCqlSaslNegotiator) authenticator.newV5SaslNegotiator(InetAddress.getLocalHost(), null);
+        PlainTextCqlSaslNegotiator negotiator = (PlainTextCqlSaslNegotiator) authenticator.newV5SaslNegotiator(InetAddress.getLocalHost(), Optional.empty());
 
         String username = "cassandra";
         String password = "password";
@@ -80,7 +81,7 @@ public class SaslNegotiationFlowTest
     public void testSASLNegotiatorFailureFlow() throws UnknownHostException
     {
         IAuthenticator authenticator = new PasswordAuthenticator();
-        PlainTextCqlSaslNegotiator negotiator = (PlainTextCqlSaslNegotiator) authenticator.newV5SaslNegotiator(InetAddress.getLocalHost(), null);
+        PlainTextCqlSaslNegotiator negotiator = (PlainTextCqlSaslNegotiator) authenticator.newV5SaslNegotiator(InetAddress.getLocalHost(), Optional.empty());
 
         negotiator.evaluateResponse("INVALID_SASL_MECH".getBytes());
 

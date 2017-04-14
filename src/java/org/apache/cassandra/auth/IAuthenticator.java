@@ -21,6 +21,7 @@ import java.net.InetAddress;
 import java.security.cert.Certificate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import org.apache.cassandra.exceptions.AuthenticationException;
@@ -66,7 +67,7 @@ public interface IAuthenticator
      * @return org.apache.cassandra.auth.IAuthenticator.SaslNegotiator implementation
      * (see {@link org.apache.cassandra.auth.PlainTextCqlSaslNegotiator})
      */
-    SaslNegotiator newV5SaslNegotiator(InetAddress clientAddress, Certificate[] certificates);
+    SaslNegotiator newV5SaslNegotiator(InetAddress clientAddress, Optional<Certificate[]> certificates);
 
     /**
      * Allows the Authenticator to handle legacy clients that don't support SASL negotiation and

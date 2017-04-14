@@ -21,6 +21,7 @@ import java.net.InetAddress;
 import java.security.cert.Certificate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 
@@ -194,7 +195,7 @@ public class PasswordAuthenticator implements IAuthenticator
         return supportedMechanisms;
     }
 
-    public SaslNegotiator newV5SaslNegotiator(InetAddress clientAddress, Certificate[] certificates)
+    public SaslNegotiator newV5SaslNegotiator(InetAddress clientAddress, Optional<Certificate[]> certificates)
     {
         return new PlainTextCqlSaslNegotiator() {
             public AuthenticatedUser getAuthenticatedUser() throws AuthenticationException

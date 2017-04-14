@@ -22,6 +22,7 @@ import java.security.cert.Certificate;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import com.google.common.collect.Lists;
@@ -52,7 +53,7 @@ public class AllowAllAuthenticator implements IAuthenticator
     {
     }
 
-    public SaslNegotiator newV5SaslNegotiator(InetAddress clientAddress, Certificate[] certificates)
+    public SaslNegotiator newV5SaslNegotiator(InetAddress clientAddress, Optional<Certificate[]> certificates)
     {
         return AUTHENTICATOR_INSTANCE;
     }
