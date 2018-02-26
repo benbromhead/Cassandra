@@ -60,6 +60,7 @@ import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.NanoTimeToCurrentTimeMillis;
 import org.apache.cassandra.utils.UUIDGen;
+import org.apache.ftpserver.command.impl.SYST;
 import org.xerial.snappy.SnappyOutputStream;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -144,6 +145,8 @@ public class OutboundTcpConnection extends FastThreadLocalThread
     private final OutboundTcpConnectionPool poolReference;
 
     private final CoalescingStrategy cs;
+    private volatile long lastFlush = 0L;
+    private volatile int pendingMessages = 0;
     private DataOutputStreamPlus out;
     private Socket socket;
     private volatile long completed;
@@ -317,7 +320,7 @@ public class OutboundTcpConnection extends FastThreadLocalThread
             {
                 UUID sessionId = UUIDGen.getUUID(ByteBuffer.wrap(sessionBytes));
                 TraceState state = Tracing.instance.get(sessionId);
-                String message = String.format("Sending %s message to %s", qm.message.verb, poolReference.endPoint());
+                String message = String.format("Sending %s message to %s - will flush? %s", qm.message.verb, poolReference.endPoint(), flush);
                 // session may have already finished; see CASSANDRA-5668
                 if (state == null)
                 {
@@ -336,9 +339,18 @@ public class OutboundTcpConnection extends FastThreadLocalThread
             long timestampMillis = NanoTimeToCurrentTimeMillis.convert(qm.timestampNanos);
             writeInternal(qm.message, qm.id, timestampMillis);
 
+            pendingMessages++;
             completed++;
-            if (flush)
-                out.flush();
+            if (flush) {
+                    long start = System.currentTimeMillis();
+                    out.flush();
+                    long finish = System.currentTimeMillis();
+                    if(pendingMessages > 1)
+                        logger.debug("Flushing output buffer took {}ms, {} messages and {}ms elapsed since last flush",  finish - start, pendingMessages ,  start - lastFlush);
+                    lastFlush = start;
+                    pendingMessages = 0;
+
+            }
         }
         catch (Throwable e)
         {
