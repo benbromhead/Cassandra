@@ -64,7 +64,6 @@ public class PasswordAuthenticator implements IAuthenticator
     public static final String USERNAME_KEY = "username";
     public static final String PASSWORD_KEY = "password";
 
-    private static final byte NUL = 0;
     private SelectStatement authenticateStatement;
 
     private CredentialsCache cache;
@@ -163,68 +162,13 @@ public class PasswordAuthenticator implements IAuthenticator
         return (SelectStatement) QueryProcessor.getStatement(query, ClientState.forInternalCalls()).statement;
     }
 
-    private class PlainTextSaslAuthenticator implements SaslNegotiator
+    private class PlainTextSaslAuthenticator extends AbstractPlainTextSaslNegotiator
     {
-        private boolean complete = false;
-        private String username;
-        private String password;
-
-        public byte[] evaluateResponse(byte[] clientResponse) throws AuthenticationException
-        {
-            decodeCredentials(clientResponse);
-            complete = true;
-            return null;
-        }
-
-        public boolean isComplete()
-        {
-            return complete;
-        }
-
         public AuthenticatedUser getAuthenticatedUser() throws AuthenticationException
         {
             if (!complete)
                 throw new AuthenticationException("SASL negotiation not complete");
             return authenticate(username, password);
-        }
-
-        /**
-         * SASL PLAIN mechanism specifies that credentials are encoded in a
-         * sequence of UTF-8 bytes, delimited by 0 (US-ASCII NUL).
-         * The form is : {code}authzId<NUL>authnId<NUL>password<NUL>{code}
-         * authzId is optional, and in fact we don't care about it here as we'll
-         * set the authzId to match the authnId (that is, there is no concept of
-         * a user being authorized to act on behalf of another with this IAuthenticator).
-         *
-         * @param bytes encoded credentials string sent by the client
-         * @throws org.apache.cassandra.exceptions.AuthenticationException if either the
-         *         authnId or password is null
-         */
-        private void decodeCredentials(byte[] bytes) throws AuthenticationException
-        {
-            logger.trace("Decoding credentials from client token");
-            byte[] user = null;
-            byte[] pass = null;
-            int end = bytes.length;
-            for (int i = bytes.length - 1 ; i >= 0; i--)
-            {
-                if (bytes[i] == NUL)
-                {
-                    if (pass == null)
-                        pass = Arrays.copyOfRange(bytes, i + 1, end);
-                    else if (user == null)
-                        user = Arrays.copyOfRange(bytes, i + 1, end);
-                    end = i;
-                }
-            }
-
-            if (pass == null)
-                throw new AuthenticationException("Password must not be null");
-            if (user == null)
-                throw new AuthenticationException("Authentication ID must not be null");
-
-            username = new String(user, StandardCharsets.UTF_8);
-            password = new String(pass, StandardCharsets.UTF_8);
         }
     }
 
