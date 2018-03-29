@@ -66,7 +66,7 @@ public class LDAPAuthenticator implements IAuthenticator
     {
 
         //We need to ensure the following environment variables are set
-        try (FileInputStream input = new FileInputStream(System.getProperty("cassandraLdapConfigurationLocation", "ldap.properties")))
+        try (FileInputStream input = new FileInputStream(System.getProperty("cassandraLdapConfigurationLocation", "conf/ldap.properties")))
         {
             ldapProp.load(input);
         }
