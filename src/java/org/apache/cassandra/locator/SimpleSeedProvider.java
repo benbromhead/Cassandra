@@ -20,6 +20,7 @@ package org.apache.cassandra.locator;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -52,7 +53,7 @@ public class SimpleSeedProvider implements SeedProvider
         {
             try
             {
-                seeds.add(InetAddress.getByName(host.trim()));
+                seeds.addAll(Arrays.asList(InetAddress.getAllByName(host.trim())));
             }
             catch (UnknownHostException ex)
             {
