@@ -22,6 +22,7 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.InetAddress;
+import java.util.Collections;
 import java.util.Hashtable;
 import java.util.Map;
 import java.util.Objects;
@@ -59,14 +60,14 @@ public class LDAPAuthenticator implements IAuthenticator
 
     public Set<? extends IResource> protectedResources()
     {
-        return null;
+        return Collections.emptySet();
     }
 
     public void validateConfiguration() throws ConfigurationException
     {
 
         //We need to ensure the following environment variables are set
-        try (FileInputStream input = new FileInputStream(System.getProperty("cassandraLdapConfigurationLocation", "ldap.properties")))
+        try (FileInputStream input = new FileInputStream(System.getProperty("cassandraLdapConfigurationLocation", "conf/ldap.properties")))
         {
             ldapProp.load(input);
         }
@@ -101,29 +102,39 @@ public class LDAPAuthenticator implements IAuthenticator
         try
         {
             ldapEnv.put(Context.SECURITY_AUTHENTICATION, "simple");
+            ldapEnv.put("com.sun.jndi.ldap.read.timeout", "1000");
+            ldapEnv.put("com.sun.jndi.ldap.connect.timeout", "2000");
             if (username != null)
             {
-                ldapEnv.put(Context.SECURITY_PRINCIPAL, username);
+                ldapEnv.put(Context.SECURITY_PRINCIPAL, "cn=" + username + ",dc=example,dc=org");
             }
             if (password != null)
             {
                 ldapEnv.put(Context.SECURITY_CREDENTIALS, password);
             }
+
+//            Context
+
             DirContext dir = new InitialDirContext(ldapEnv);
+            dir.close();
 
-            LdapName ln = new LdapName(username);
-
-            for (Rdn rdn : ln.getRdns())
-            {
-                if (rdn.getType().equalsIgnoreCase("CN"))
-                {
-                    return new AuthenticatedUser((String) rdn.getValue());
-                }
-            }
-            throw new AuthenticationException("Could not determine CN from: " + username);
+            return new AuthenticatedUser(username);
+//
+//            LdapName ln = new LdapName(username);
+//
+//            for (Rdn rdn : ln.getRdns())
+//            {
+//                if (rdn.getType().equalsIgnoreCase("CN"))
+//                {
+//                    return new AuthenticatedUser((String) rdn.getValue());
+//                }
+//            }
+//            throw new AuthenticationException("Could not determine CN from: " + username);
         }
         catch (NamingException e)
         {
+            if(e.getCause() instanceof javax.naming.AuthenticationException)
+                throw new AuthenticationException(e.getExplanation() );
             throw new SecurityException("Could not authenticate to directory server using provided credentials", e);
         }
         finally
