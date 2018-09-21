@@ -124,6 +124,13 @@ public interface ColumnFamilyStoreMBean
      */
     public List<String> getBuiltIndexes();
 
+
+    /**
+     * Returns a list of filenames that are not repaired on this node for this columnFamilyStore
+     * @return list of filenames containing that are not repaired
+     */
+    public List<String> getUnrepairedSSTables();
+
     /**
      * Returns a list of filenames that contain the given key on this node
      * @param key

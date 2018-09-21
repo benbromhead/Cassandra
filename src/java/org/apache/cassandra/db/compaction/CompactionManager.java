@@ -828,9 +828,7 @@ public class CompactionManager implements CompactionManagerMBean
         return sstables;
     }
 
-    public void forceUserDefinedCompaction(String dataFiles)
-    {
-        String[] filenames = dataFiles.split(",");
+    private Multimap<ColumnFamilyStore, Descriptor> descriptorsForFilenames(String[] filenames) {
         Multimap<ColumnFamilyStore, Descriptor> descriptors = ArrayListMultimap.create();
 
         for (String filename : filenames)
@@ -846,6 +844,23 @@ public class CompactionManager implements CompactionManagerMBean
             ColumnFamilyStore cfs = Keyspace.open(desc.ksname).getColumnFamilyStore(desc.cfname);
             descriptors.put(cfs, cfs.getDirectories().find(new File(filename.trim()).getName()));
         }
+
+        return descriptors;
+    }
+
+    public void forceUserDefinedMarkRepaired(String dataFiles)
+    {
+        Multimap<ColumnFamilyStore, Descriptor> descriptors = descriptorsForFilenames(dataFiles.split(","));
+
+        List<Future<?>> futures = new ArrayList<>();
+        for (ColumnFamilyStore cfs : descriptors.keySet())
+            futures.add(submitUserDefinedMarkRepaired(cfs, descriptors.get(cfs)));
+        FBUtilities.waitOnFutures(futures);
+    }
+
+    public void forceUserDefinedCompaction(String dataFiles)
+    {
+        Multimap<ColumnFamilyStore, Descriptor> descriptors = descriptorsForFilenames(dataFiles.split(","));
 
         List<Future<?>> futures = new ArrayList<>();
         int nowInSec = FBUtilities.nowInSeconds();
@@ -907,6 +922,70 @@ public class CompactionManager implements CompactionManagerMBean
             }
         }
     }
+
+    public Future<?> submitUserDefinedMarkRepaired(final ColumnFamilyStore cfs, final Collection<Descriptor> dataFiles)
+    {
+        Runnable runnable = new WrappedRunnable()
+        {
+            protected void runMayThrow()
+            {
+                // look up the sstables now that we're on the compaction executor, so we don't try to re-compact
+                // something that was already being compacted earlier.
+                Collection<SSTableReader> sstables = new ArrayList<>(dataFiles.size());
+                for (Descriptor desc : dataFiles)
+                {
+                    // inefficient but not in a performance sensitive path
+                    SSTableReader sstable = lookupSSTable(cfs, desc);
+                    if (sstable == null)
+                    {
+                        logger.info("Will not mark {}: it is not an active sstable", desc);
+                    }
+                    else
+                    {
+                        sstables.add(sstable);
+                    }
+                }
+
+                if (sstables.isEmpty())
+                {
+                    logger.info("No files to mark for user defined repair management");
+                }
+                else
+                {
+                    List<SSTableReader> unrepairedSStables = sstables.stream()
+                            .filter(s -> !s.isRepaired()).collect(Collectors.toList());
+
+
+                    //Wait to get a lock
+                    LifecycleTransaction modifier = null;
+                    while(modifier == null) {
+                        modifier = cfs.getTracker().tryModify(unrepairedSStables, OperationType.ANTICOMPACTION);
+                    }
+
+                    for(SSTableReader s: unrepairedSStables) {
+                        try
+                        {
+                            s.descriptor.getMetadataSerializer().mutateRepairedAt(s.descriptor, System.currentTimeMillis());
+                            s.reloadSSTableMetadata(); //Needs to happen?
+                        }
+                        catch (IOException e)
+                        {
+                            logger.warn("Could not mark {} as repaired", s);
+                        } finally
+                        {
+                            modifier.cancel(s);
+                        }
+                    }
+
+                    cfs.getTracker().notifySSTableRepairedStatusChanged(unrepairedSStables.stream().filter(SSTableReader::isRepaired).collect(Collectors.toList()));
+                    modifier.close();
+                }
+            }
+        };
+
+        return executor.submitIfRunning(runnable, "user defined task");
+    }
+
 
 
     public Future<?> submitUserDefined(final ColumnFamilyStore cfs, final Collection<Descriptor> dataFiles, final int gcBefore)

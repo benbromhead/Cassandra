@@ -44,6 +44,15 @@ public interface CompactionManagerMBean
     public void forceUserDefinedCompaction(String dataFiles);
 
     /**
+     * Triggers marking user specified sstables as repaired.
+     * You can specify files from various keyspaces and columnfamilies.
+     *
+     * @param dataFiles a comma separated list of sstable file to compact.
+     *                  must contain keyspace and columnfamily name in path(for 2.1+) or file name itself.
+     */
+    public void forceUserDefinedMarkRepaired(String dataFiles);
+
+    /**
      * Triggers the cleanup of user specified sstables.
      * You can specify files from various keyspaces and columnfamilies.
      * If you do so, cleanup is performed each file individually

@@ -28,6 +28,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import javax.management.*;
 import javax.management.openmbean.*;
 
@@ -2489,6 +2490,12 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
     public List<String> getBuiltIndexes()
     {
        return indexManager.getBuiltIndexNames();
+    }
+
+    @Override
+    public List<String> getUnrepairedSSTables()
+    {
+        return select(View.select(SSTableSet.NONCOMPACTING, (s) -> !s.isRepaired())).sstables.stream().map(s -> s.getFilename()).collect(Collectors.toList());
     }
 
     public int getUnleveledSSTables()
